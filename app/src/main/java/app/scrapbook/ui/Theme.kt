@@ -5,6 +5,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -22,7 +24,7 @@ val Themes = listOf(
 )
 
 object Sb {
-    val ink = Color(0xFF24272A); val mute = Color(0xFF82827B); val line = Color(0xFFE4E1D8); val card = Color.White
+    val ink = Color(0xFF24272A); val mute = Color(0xFF686862); val line = Color(0xFFE4E1D8); val card = Color.White
     val notes = listOf(Color(0xFFF6E6A8), Color(0xFFDBE6D6), Color(0xFFD8E4EE), Color(0xFFF1D9DE), Color(0xFFE3DDF0))
     val palettes = listOf(
         listOf(Color(0xFFCFDCCB), Color(0xFFF3E7C4), Color(0xFF8FA88F)),
@@ -35,11 +37,24 @@ object Sb {
 
 val LocalSb = compositionLocalOf { Themes[0] }
 
-@Composable fun headFont(): FontFamily = if (LocalSb.current.serif) FontFamily.Serif else FontFamily.SansSerif
+/** Brand fonts (serif, sans). Loaded from res/font if present (see FONTS.md), otherwise system fonts. */
+val LocalFonts = compositionLocalOf { FontFamily.Serif to FontFamily.SansSerif }
+
+@Composable
+fun rememberBrandFonts(): Pair<FontFamily, FontFamily> {
+    val ctx = LocalContext.current
+    return remember {
+        fun fam(name: String, fallback: FontFamily): FontFamily =
+            ctx.resources.getIdentifier(name, "font", ctx.packageName).let { if (it == 0) fallback else FontFamily(Font(it)) }
+        fam("newsreader", FontFamily.Serif) to fam("figtree", FontFamily.SansSerif)
+    }
+}
+
+@Composable fun headFont(): FontFamily = LocalFonts.current.let { if (LocalSb.current.serif) it.first else it.second }
 
 @Composable
 fun ScrapbookTheme(t: SbTheme, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalSb provides t) {
+    CompositionLocalProvider(LocalSb provides t, LocalFonts provides rememberBrandFonts()) {
         MaterialTheme(colorScheme = lightColorScheme(primary = t.acc, background = t.paper, surface = t.paper, onSurface = Sb.ink), content = content)
     }
 }

@@ -46,7 +46,7 @@ fun Sticky(item: Item, onClick: () -> Unit) {
             drawContent()
             val p = Path().apply { moveTo(size.width - FOLD, size.height - FOLD); lineTo(size.width, size.height - FOLD); lineTo(size.width - FOLD, size.height); close() }
             drawPath(p, Color(0x22000000))
-        }.clickable(onClick = onClick).padding(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 22.dp),
+        }.tap(onClick = onClick).padding(start = 10.dp, top = 10.dp, end = 10.dp, bottom = 22.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (item.kind == Kind.Image) ItemImage(item, Modifier.fillMaxWidth().height(70.dp), 8.dp)
         Text(item.title, fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -63,7 +63,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     Scaffold(containerColor = t.paper, bottomBar = { BottomBar({ nav.popBackStack() }, { nav.navigate("edit/0") }, { nav.navigate("search") }) }) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 15.dp)) {
             Row(Modifier.padding(vertical = 10.dp), Arrangement.spacedBy(12.dp), Alignment.CenterVertically) {
-                Text("‹", fontSize = 22.sp, modifier = Modifier.clickable { nav.popBackStack() })
+                Text("‹", fontSize = 22.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
                 Column {
                     Text(name, fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
                     Text("${shown.size} items", fontSize = 10.5.sp, color = Sb.mute)
@@ -73,6 +73,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                 Chip("All", kind == null) { kind = null }
                 Kind.entries.forEach { Chip(it.name, kind == it) { kind = it } }
             }
+            if (shown.isEmpty()) Text("Nothing here yet. Tap + to add something.", color = Sb.mute, fontSize = 12.sp, modifier = Modifier.padding(top = 24.dp))
             Row(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 12.dp), Arrangement.spacedBy(8.dp)) {
                 listOf(0, 1).forEach { col ->
                     Column(Modifier.weight(1f)) { shown.filterIndexed { i, _ -> i % 2 == col }.forEach { Sticky(it) { nav.navigate("item/${it.id}") } } }
@@ -102,7 +103,7 @@ fun SearchScreen(vm: ArchiveViewModel, nav: NavController) {
     Scaffold(containerColor = t.paper) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 15.dp)) {
             Row(Modifier.padding(vertical = 10.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
-                Text("‹", fontSize = 22.sp, modifier = Modifier.clickable { nav.popBackStack() })
+                Text("‹", fontSize = 22.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
                 BasicTextField(q, { q = it }, Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Color(0xFFEFEDE6)).padding(12.dp),
                     singleLine = true, textStyle = TextStyle(fontSize = 13.sp, color = Sb.ink), cursorBrush = SolidColor(t.acc),
                     decorationBox = { inner -> Box { if (q.isEmpty()) Text("Search titles, tags, quotes…", color = Sb.mute, fontSize = 13.sp); inner() } })
@@ -112,9 +113,10 @@ fun SearchScreen(vm: ArchiveViewModel, nav: NavController) {
                 Kind.entries.forEach { Chip(it.name, kind == it) { kind = it } }
             }
             Text("${res.size} results", fontSize = 10.5.sp, color = Sb.mute, modifier = Modifier.padding(vertical = 8.dp))
+            if (res.isEmpty()) Text("No matches. Try a tag or a collection name.", color = Sb.mute, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 res.forEach { i ->
-                    Row(Modifier.fillMaxWidth().clickable { nav.navigate("item/${i.id}") }.padding(vertical = 9.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().tap { nav.navigate("item/${i.id}") }.padding(vertical = 9.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
                         ItemImage(i, Modifier.size(40.dp), 10.dp)
                         Column {
                             Text(hl(i.title, q, mark), fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -145,7 +147,7 @@ fun RediscoverScreen(vm: ArchiveViewModel, nav: NavController) {
     Scaffold(containerColor = t.tint.copy(alpha = .5f)) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 18.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), Arrangement.SpaceBetween) {
-                Text("✕", fontSize = 16.sp, modifier = Modifier.clickable { nav.popBackStack() })
+                Text("✕", fontSize = 16.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
                 Text("From your archive", fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 Text("${minOf(i + 1, queue.size)}/${queue.size}", fontSize = 11.sp, color = Sb.mute)
             }
@@ -164,7 +166,7 @@ fun RediscoverScreen(vm: ArchiveViewModel, nav: NavController) {
             }
             if (cur != null) {
                 Text("You saved this ${ago(cur.savedAt)}.", fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, fontSize = 14.sp, modifier = Modifier.padding(top = 26.dp))
-                Row(Modifier.padding(top = 18.dp), Arrangement.spacedBy(24.dp)) { RoundButton("✕") { next(false) }; RoundButton("✓", dark = true) { next(true) } }
+                Row(Modifier.padding(top = 18.dp), Arrangement.spacedBy(24.dp)) { RoundButton("✕", desc = "Let it rest") { next(false) }; RoundButton("✓", dark = true, desc = "Keep close") { next(true) } }
                 Text("Let it rest · Keep close", fontSize = 10.5.sp, color = Sb.mute, modifier = Modifier.padding(top = 10.dp))
             }
         }

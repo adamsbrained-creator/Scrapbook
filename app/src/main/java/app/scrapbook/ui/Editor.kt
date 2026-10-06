@@ -24,7 +24,7 @@ import androidx.navigation.NavController
 import app.scrapbook.*
 
 @Composable
-private fun Field(v: String, onChange: (String) -> Unit, hint: String, size: TextUnit, font: FontFamily, weight: FontWeight = FontWeight.Normal) {
+fun Field(v: String, onChange: (String) -> Unit, hint: String, size: TextUnit, font: FontFamily, weight: FontWeight = FontWeight.Normal) {
     BasicTextField(v, onChange, Modifier.fillMaxWidth(),
         textStyle = TextStyle(fontSize = size, fontFamily = font, fontWeight = weight, color = Sb.ink, lineHeight = size * 1.4f),
         cursorBrush = SolidColor(LocalSb.current.acc),
@@ -49,13 +49,13 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
         Box(Modifier.fillMaxSize().padding(pad).background(Sb.notes[color % 5].copy(alpha = .4f))) {
             Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                    Text("Cancel", fontSize = 13.sp, modifier = Modifier.clickable { nav.popBackStack() })
+                    Text("Cancel", fontSize = 13.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
                     if (existing != null) Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text(if (existing.pinned) "Unpin" else "Pin", fontSize = 13.sp, modifier = Modifier.clickable { vm.togglePin(existing) })
-                        Text("Layout", fontSize = 13.sp, modifier = Modifier.clickable { nav.navigate("layouts/${existing.id}") })
-                        Text("Delete", fontSize = 13.sp, modifier = Modifier.clickable { vm.delete(existing); nav.popBackStack("home", false) })
+                        Text(if (existing.pinned) "Unpin" else "Pin", fontSize = 13.sp, modifier = Modifier.link("Pin or unpin") { vm.togglePin(existing) })
+                        Text("Layout", fontSize = 13.sp, modifier = Modifier.link("Change layout") { nav.navigate("layouts/${existing.id}") })
+                        Text("Delete", fontSize = 13.sp, modifier = Modifier.link("Delete note") { vm.delete(existing); nav.popBackStack("home", false) })
                     }
-                    Text("Save", color = t.acc, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.clickable {
+                    Text("Save", color = t.acc, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.link("Save note") {
                         val base = existing ?: Item(title = "", body = "", kind = kind, collection = shelf)
                         vm.save(base.copy(title = title.ifBlank { "Untitled" }, body = body, kind = kind, collection = shelf, color = color, savedAt = System.currentTimeMillis(),
                             tags = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }, imageUri = img))
@@ -76,7 +76,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Sb.notes.forEachIndexed { i, c ->
                         Box(Modifier.size(24.dp).clip(CircleShape).background(c)
-                            .border(if (i == color % 5) 2.dp else 1.dp, if (i == color % 5) Sb.ink else Sb.line, CircleShape).clickable { color = i })
+                            .border(if (i == color % 5) 2.dp else 1.dp, if (i == color % 5) Sb.ink else Sb.line, CircleShape).tap(listOf("Butter", "Sage", "Blue", "Rose", "Lilac")[i]) { color = i })
                     }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {

@@ -19,6 +19,7 @@ data class Item(
     val color: Int = 0, val pinned: Boolean = false, val savedAt: Long = System.currentTimeMillis(),
     val font: Int = 0, val density: Int = 1, val showMeta: Boolean = true,
     val imageUri: String? = null,
+    val canvas: String = "",
 )
 
 data class Shelf(val name: String, val count: Int, val color: Int)

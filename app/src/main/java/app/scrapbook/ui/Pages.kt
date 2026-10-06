@@ -15,6 +15,14 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +42,7 @@ import kotlin.math.roundToInt
 
 data class PageStyle(val family: FontFamily?, val gap: Dp, val line: TextUnit, val showMeta: Boolean)
 val LocalPage = compositionLocalOf { PageStyle(null, 10.dp, 22.sp, true) }
+val LocalCanvas = compositionLocalOf<(String) -> Unit> { { } }
 private fun Item.style() = PageStyle(
     when (font) { 1 -> FontFamily.Serif; 2 -> FontFamily.SansSerif; 3 -> FontFamily.Monospace; else -> null },
     when (density) { 0 -> 16.dp; 2 -> 6.dp; else -> 10.dp }, when (density) { 0 -> 25.sp; 2 -> 19.sp; else -> 22.sp }, showMeta)
@@ -41,21 +50,37 @@ private fun Item.style() = PageStyle(
 private fun date(ms: Long) = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date(ms))
 @Composable private fun Meta(text: String) = Text(text, fontSize = 10.5.sp, color = Sb.mute)
 @Composable private fun Title(text: String, size: TextUnit = 26.sp, align: TextAlign = TextAlign.Start) =
-    Text(text, fontFamily = LocalPage.current.family ?: headFont(), fontWeight = FontWeight.SemiBold, fontSize = size, lineHeight = size * 1.15f, textAlign = align)
+    Text(text, fontFamily = LocalPage.current.family ?: headFont(), fontWeight = FontWeight.SemiBold, fontSize = size, lineHeight = size * 1.15f, textAlign = align, modifier = Modifier.semantics { heading() })
+/** Web links in a text become tappable and open in the browser. */
+@Composable
+private fun linkify(text: String): AnnotatedString {
+    val acc = LocalSb.current.acc
+    return buildAnnotatedString {
+        var i = 0
+        findUrls(text).forEach { r ->
+            val url = text.substring(r.first, r.last + 1)
+            append(text.substring(i, r.first))
+            withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(url) }
+            i = r.last + 1
+        }
+        append(text.substring(i))
+    }
+}
+
 /** Lets a tapped checklist line rewrite the note body: (oldLine, newLine). */
 val LocalToggle = compositionLocalOf<(String, String) -> Unit> { { _, _ -> } }
 
 /** Body text. Lines starting "- [ ] " or "- [x] " become tappable checklist rows. */
 @Composable
 private fun Body(text: String) {
-    val st = LocalPage.current; val toggle = LocalToggle.current; val fam = st.family ?: FontFamily.Serif
-    if (text.lines().none { it.startsWith("- [ ] ") || it.startsWith("- [x] ") }) { Text(text, fontFamily = fam, fontSize = 14.sp, lineHeight = st.line); return }
+    val st = LocalPage.current; val toggle = LocalToggle.current; val fam = st.family ?: LocalFonts.current.first
+    if (text.lines().none { it.startsWith("- [ ] ") || it.startsWith("- [x] ") }) { Text(linkify(text), fontFamily = fam, fontSize = 14.sp, lineHeight = st.line); return }
     Column {
         text.lines().forEach { l ->
-            if (!(l.startsWith("- [ ] ") || l.startsWith("- [x] "))) Text(l, fontFamily = fam, fontSize = 14.sp, lineHeight = st.line)
+            if (!(l.startsWith("- [ ] ") || l.startsWith("- [x] "))) Text(linkify(l), fontFamily = fam, fontSize = 14.sp, lineHeight = st.line)
             else {
                 val done = l.startsWith("- [x] ")
-                Row(Modifier.clickable { toggle(l, (if (done) "- [ ] " else "- [x] ") + l.drop(6)) }.padding(vertical = 3.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+                Row(Modifier.tap { toggle(l, (if (done) "- [ ] " else "- [x] ") + l.drop(6)) }.padding(vertical = 3.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
                     Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).background(if (done) LocalSb.current.acc else Color.Transparent).border(1.5.dp, LocalSb.current.acc, RoundedCornerShape(4.dp)))
                     Text(l.drop(6), fontFamily = fam, fontSize = 14.sp, lineHeight = st.line, color = if (done) Sb.mute else Sb.ink, textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None)
                 }
@@ -65,10 +90,11 @@ private fun Body(text: String) {
 }
 
 @Composable
-private fun Drag(x: Float, y: Float, rot: Float, content: @Composable () -> Unit) {
-    var o by remember { mutableStateOf(Offset(x, y)) }
+private fun Drag(start: Offset, rot: Float, onDone: (Offset) -> Unit, content: @Composable () -> Unit) {
+    var o by remember(start) { mutableStateOf(start) }
+    val done by rememberUpdatedState(onDone)
     Box(Modifier.offset { IntOffset(o.x.roundToInt(), o.y.roundToInt()) }.rotate(rot)
-        .pointerInput(Unit) { detectDragGestures { c, d -> c.consume(); o += d } }) { content() }
+        .pointerInput(Unit) { detectDragGestures(onDragEnd = { done(o) }) { c, d -> c.consume(); o += d } }) { content() }
 }
 
 /** One item, rendered by its layout. Content is shared across layouts, so switching never loses anything. */
@@ -78,6 +104,11 @@ fun ItemPage(item: Item, all: List<Item>) = CompositionLocalProvider(LocalPage p
 @Composable
 private fun PageBody(item: Item, all: List<Item>) {
     val st = LocalPage.current; val gap = st.gap
+    val defaults = listOf(Offset(30f, 30f), Offset(150f, 250f), Offset(40f, 300f))
+    val saved = remember(item.canvas) { item.canvas.split(";").mapNotNull { s -> s.split(",").takeIf { it.size == 2 }?.let { Offset(it[0].toFloatOrNull() ?: 0f, it[1].toFloatOrNull() ?: 0f) } } }
+    val pos = defaults.mapIndexed { i, d -> saved.getOrNull(i) ?: d }
+    val canvasSave = LocalCanvas.current
+    fun moved(i: Int, o: Offset) = canvasSave(pos.mapIndexed { j, q -> if (j == i) o else q }.joinToString(";") { "${it.x},${it.y}" })
     val t = LocalSb.current; val r = RoundedCornerShape(t.radius)
     val tags = item.tags.joinToString().ifBlank { "—" }
     when (item.layout) {
@@ -133,9 +164,9 @@ private fun PageBody(item: Item, all: List<Item>) {
         Layout.Blank -> Box(Modifier.fillMaxWidth().height(420.dp).clip(r).drawBehind {
             var y = 0f; while (y < size.height) { var x = 0f; while (x < size.width) { drawCircle(Color(0xFFCFCABB), 1.5f, Offset(x, y)); x += 48f }; y += 48f }
         }) {
-            Drag(30f, 30f, -3f) { Column(Modifier.width(150.dp).clip(r).background(Sb.notes[item.color % 5]).padding(12.dp)) { Title(item.title, 18.sp) } }
-            Drag(150f, 250f, 2f) { Column(Modifier.width(180.dp).clip(r).background(Sb.card).border(1.dp, Sb.line, r).padding(12.dp)) { Body(item.body) } }
-            Drag(40f, 300f, -4f) { FlatImage(item.color + 1, Modifier.size(90.dp, 100.dp)) }
+            Drag(pos[0], -3f, { moved(0, it) }) { Column(Modifier.width(150.dp).clip(r).background(Sb.notes[item.color % 5]).padding(12.dp)) { Title(item.title, 18.sp) } }
+            Drag(pos[1], 2f, { moved(1, it) }) { Column(Modifier.width(180.dp).clip(r).background(Sb.card).border(1.dp, Sb.line, r).padding(12.dp)) { Body(item.body) } }
+            Drag(pos[2], -4f, { moved(2, it) }) { ItemImage(item, Modifier.size(90.dp, 100.dp)) }
         }
     }
 }
@@ -143,7 +174,7 @@ private fun PageBody(item: Item, all: List<Item>) {
 @Composable
 private fun RowScope.Act(label: String, onClick: () -> Unit) {
     Text(label, Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Sb.card).border(1.dp, Sb.line, RoundedCornerShape(12.dp))
-        .clickable(onClick = onClick).padding(vertical = 10.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
+        .tap(onClick = onClick).padding(vertical = 10.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
 }
 
 /** Quiet reading view with metadata on top and actions at the bottom. */
@@ -156,11 +187,12 @@ fun ItemScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
         if (item != null) Box(Modifier.fillMaxSize().padding(pad).background(Sb.notes[item.color % 5].copy(alpha = .4f))) {
             Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), Arrangement.SpaceBetween) {
-                    Text("‹ Back", fontSize = 13.sp, modifier = Modifier.clickable { nav.popBackStack() })
+                    Text("‹ Back", fontSize = 13.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
                     Meta("${item.collection} · ${item.kind.name} · ${date(item.savedAt)}")
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    CompositionLocalProvider(LocalToggle provides { a, b -> vm.save(item.copy(body = item.body.replaceFirst(a, b))) }) { ItemPage(item, list) }
+                    CompositionLocalProvider(LocalToggle provides { a, b -> vm.save(item.copy(body = item.body.replaceFirst(a, b))) },
+                        LocalCanvas provides { s -> vm.save(item.copy(canvas = s)) }) { ItemPage(item, list) }
                 }
                 Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 12.dp), Arrangement.spacedBy(6.dp)) {
                     Act("Edit") { nav.navigate("edit/${item.id}") }

@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,15 +40,15 @@ fun FlatImage(i: Int, modifier: Modifier = Modifier, radius: Dp = LocalSb.curren
 @Composable
 fun Chip(text: String, on: Boolean = false, onClick: () -> Unit = {}) {
     Text(text, fontSize = 11.sp, color = if (on) Color.White else Sb.ink,
-        modifier = Modifier.clip(CircleShape).background(if (on) Sb.ink else Sb.card)
-            .border(1.dp, Sb.line, CircleShape).clickable(onClick = onClick)
+        modifier = Modifier.minimumInteractiveComponentSize().semantics { selected = on }.clip(CircleShape).background(if (on) Sb.ink else Sb.card)
+            .border(1.dp, Sb.line, CircleShape).tap(onClick = onClick)
             .padding(horizontal = 11.dp, vertical = 5.dp))
 }
 
 @Composable
-fun RoundButton(label: String, dark: Boolean = false, onClick: () -> Unit) {
-    Box(Modifier.size(42.dp).clip(CircleShape).background(if (dark) Sb.ink else Sb.card)
-        .border(1.dp, Sb.line, CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+fun RoundButton(label: String, dark: Boolean = false, desc: String = label, onClick: () -> Unit) {
+    Box(Modifier.size(46.dp).clip(CircleShape).background(if (dark) Sb.ink else Sb.card)
+        .border(1.dp, Sb.line, CircleShape).tap(desc, onClick).semantics { contentDescription = desc }, contentAlignment = Alignment.Center) {
         Text(label, color = if (dark) Color.White else Sb.ink, fontSize = 16.sp)
     }
 }
@@ -67,9 +72,9 @@ fun BottomBar(onShelves: () -> Unit, onNew: () -> Unit, onSearch: () -> Unit = {
     Row(Modifier.navigationBarsPadding().padding(12.dp), Arrangement.spacedBy(7.dp), Alignment.CenterVertically) {
         Text("Search", color = Sb.mute, fontSize = 12.sp,
             modifier = Modifier.weight(1f).clip(CircleShape).background(Sb.card).border(1.dp, Sb.line, CircleShape)
-                .clickable(onClick = onSearch).padding(horizontal = 14.dp, vertical = 12.dp))
-        RoundButton("▦", onClick = onShelves)
-        RoundButton("+", dark = true, onClick = onNew)
+                .tap(onClick = onSearch).padding(horizontal = 14.dp, vertical = 12.dp))
+        RoundButton("▦", desc = "Collections", onClick = onShelves)
+        RoundButton("+", dark = true, desc = "New note", onClick = onNew)
     }
 }
 
@@ -77,7 +82,7 @@ fun BottomBar(onShelves: () -> Unit, onNew: () -> Unit, onSearch: () -> Unit = {
 fun RecentCard(item: Item, onClick: () -> Unit) {
     val r = LocalSb.current.radius
     Row(Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(RoundedCornerShape(r)).background(Sb.card)
-        .border(1.dp, Sb.line, RoundedCornerShape(r)).clickable(onClick = onClick).padding(10.dp),
+        .border(1.dp, Sb.line, RoundedCornerShape(r)).tap(onClick = onClick).padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.width(5.dp).height(38.dp).clip(CircleShape).background(Sb.notes[item.color % 5]))
         Column(Modifier.weight(1f)) {
@@ -91,6 +96,12 @@ fun RecentCard(item: Item, onClick: () -> Unit) {
 /** A picked photo when the item has one, otherwise the flat placeholder illustration. */
 @Composable
 fun ItemImage(item: Item, modifier: Modifier = Modifier, radius: Dp = LocalSb.current.radius) {
-    if (item.imageUri != null) AsyncImage(item.imageUri, null, modifier.clip(RoundedCornerShape(radius)), contentScale = ContentScale.Crop)
+    if (item.imageUri != null) AsyncImage(item.imageUri, item.title, modifier.clip(RoundedCornerShape(radius)), contentScale = ContentScale.Crop)
     else FlatImage(item.color, modifier, radius)
 }
+
+/** Clickable with a Button role and an optional spoken label. */
+fun Modifier.tap(label: String? = null, onClick: () -> Unit): Modifier = clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
+
+/** Same, with a 48dp minimum touch target; for text links and small icons. */
+fun Modifier.link(label: String? = null, onClick: () -> Unit): Modifier = minimumInteractiveComponentSize().tap(label, onClick)
