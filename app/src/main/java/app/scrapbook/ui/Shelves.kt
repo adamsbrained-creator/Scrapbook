@@ -7,6 +7,10 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -37,12 +41,12 @@ fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit) {
     val clash = all.any { it.name.equals(clean, true) && it.name != existing?.name } || clean.equals("Inbox", true) || clean.equals("All", true)
     val ok = clean.isNotEmpty() && !clash
     Sheet(if (existing == null) "New collection" else "Edit collection", onDone, doneLabel = "Close") {
-        Field(name, { name = it.filterNot { c -> c in "/?#{}" } }, "Name", 18.sp, headFont(), FontWeight.SemiBold)
-        Field(desc, { desc = it }, "Description (optional)", 13.sp, FontFamily.SansSerif)
+        InputBox { Field(name, { name = it.filterNot { c -> c in "/?#{}" } }, "Name", 18.sp, headFont(), FontWeight.Medium) }
+        InputBox { Field(desc, { desc = it }, "Description (optional)", 15.sp, headFont()) }
         if (clash) Text("That name is already used.", fontSize = 11.sp, color = Color(0xFFB3261E))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Sb.notes.forEachIndexed { i, c ->
-                Box(Modifier.size(26.dp).clip(CircleShape).background(c).border(if (i == color % 5) 2.dp else 1.dp, if (i == color % 5) Sb.ink else Sb.line, CircleShape)
+                Box(Modifier.size(32.dp).clip(CircleShape).background(c).border(if (i == color % 5) 2.dp else 1.dp, if (i == color % 5) Sb.ink else Sb.line, CircleShape)
                     .tap(COLOR_NAMES[i]) { color = i })
             }
         }
@@ -73,52 +77,71 @@ fun MoveSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet("Add
 fun TagSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) {
     var text by remember { mutableStateOf(item.tags.joinToString(", ")) }
     Sheet("Tags", { vm.save(item.copy(tags = text.split(",").map { it.trim() }.filter { it.isNotEmpty() })); onDone() }, doneLabel = "Save") {
-        Field(text, { text = it }, "Tags, separated by commas", 14.sp, FontFamily.SansSerif)
+        InputBox { Field(text, { text = it }, "Tags, separated by commas", 16.sp, headFont()) }
         Text("Tags are searchable.", fontSize = 11.sp, color = Sb.mute)
     }
 }
 
 @Composable
+private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavController, onEdit: () -> Unit) {
+    Box(modifier.heightIn(min = 176.dp).clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${s.name}") { nav.navigate("shelf/${s.name}") }) {
+        Box(Modifier.align(Alignment.TopEnd).padding(end = 22.dp).width(34.dp).height(9.dp)
+            .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(TAB_COLORS[s.color % TAB_COLORS.size]))
+        Column(Modifier.padding(18.dp).fillMaxWidth()) {
+            Text(s.name, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
+            Text(if (count == 1) "1 note" else "$count notes", fontSize = 13.sp, color = Sb.mute)
+            if (s.description.isNotBlank()) Text(s.description, fontSize = 12.sp, color = Sb.mute, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Bottom) {
+                Text("Edit", fontSize = 13.sp, color = LocalSb.current.acc, modifier = Modifier.link("Edit ${s.name}") { onEdit() })
+                ItemImage(coverOf(s), Modifier.size(54.dp, 66.dp).rotate(6f).border(2.dp, Color.White, RoundedCornerShape(10.dp)), 10.dp)
+            }
+        }
+    }
+}
+
+/** All collections as cards with a colored tab, note count and cover. */
+@Composable
 fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     var edit by remember { mutableStateOf<Shelf?>(null) }; var creating by remember { mutableStateOf(false) }
-    Scaffold(containerColor = t.paper) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
-            Column(Modifier.fillMaxSize().padding(horizontal = 15.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(Modifier.fillMaxWidth().padding(top = 10.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                    Text("‹", fontSize = 22.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
-                    Text("Collections", fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 24.sp)
-                    Chip("＋ New") { creating = true }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Chip("All notes · ${all.size}") { nav.navigate("shelf/All") }
-                    Chip("Inbox · ${all.count { it.collection == "Inbox" }}") { nav.navigate("shelf/Inbox") }
-                }
-                if (shelves.isEmpty()) Text("No collections yet. Make one for books, trips or ideas, then file notes into it.", fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(vertical = 20.dp))
-                shelves.forEach { s ->
-                    val its = all.filter { it.collection == s.name }
-                    Box(Modifier.fillMaxWidth().heightIn(min = 124.dp).clip(RoundedCornerShape(t.radius)).background(Sb.card)
-                        .border(1.dp, Sb.line, RoundedCornerShape(t.radius)).tap { nav.navigate("shelf/${s.name}") }) {
-                        Row(Modifier.padding(11.dp), Arrangement.spacedBy(10.dp)) {
-                            ItemImage(coverOf(s), Modifier.size(40.dp), 10.dp)
-                            Column(Modifier.weight(1f)) {
-                                Text(s.name, fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text(itemsLabel(its.size) + if (s.description.isNotBlank()) " · " + s.description else "", fontSize = 10.5.sp, color = Sb.mute, maxLines = 1)
-                            }
-                            Text("Edit", fontSize = 12.sp, color = t.acc, modifier = Modifier.link("Edit ${s.name}") { edit = s })
-                        }
-                        Row(Modifier.align(Alignment.BottomStart).padding(start = 11.dp).wrapContentWidth(Alignment.Start, unbounded = true), Arrangement.spacedBy(6.dp)) {
-                            its.take(3).forEach {
-                                Text(it.title, fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 2,
-                                    modifier = Modifier.size(96.dp, 46.dp).clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)).background(Sb.notes[it.color % 5]).padding(8.dp))
-                            }
-                        }
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(containerColor = t.paper) { pad ->
+            LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
+                        Text("scrapbook", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 22.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                        Box(Modifier.size(48.dp).tap("New collection") { creating = true }, Alignment.Center) { Ic("plus", 26.dp, Sb.ink) }
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                item {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("Collections", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 36.sp)
+                        Text("  ${shelves.size}", fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 7.dp))
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("All notes · ${all.size}") { nav.navigate("shelf/All") }
+                        Chip("Inbox · ${all.count { it.collection == "Inbox" }}") { nav.navigate("shelf/Inbox") }
+                    }
+                }
+                if (shelves.isEmpty()) item {
+                    Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("No collections yet. Make one for books, trips or ideas, then file notes into it.", fontSize = 15.sp, color = Sb.mute)
+                        Chip("＋ New collection", true) { creating = true }
+                    }
+                }
+                items(shelves.chunked(2)) { pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        pair.forEach { s -> ShelfCard(s, all.count { it.collection == s.name }, Modifier.weight(1f), nav) { edit = s } }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
             }
-            if (creating) ShelfSheet(vm, null) { creating = false }
-            edit?.let { ShelfSheet(vm, it) { edit = null } }
         }
+        if (creating) ShelfSheet(vm, null) { creating = false }
+        edit?.let { ShelfSheet(vm, it) { edit = null } }
     }
 }

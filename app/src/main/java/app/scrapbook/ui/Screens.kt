@@ -2,102 +2,99 @@ package app.scrapbook.ui
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import app.scrapbook.ArchiveViewModel
-import app.scrapbook.Layout
-import app.scrapbook.itemsLabel
+import app.scrapbook.*
 
 @Composable
-fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
-    val list by vm.items.collectAsState(); val t = LocalSb.current
-    var style by remember { mutableStateOf(false) }
-    val welcomed by vm.welcomed.collectAsState()
-    val shelves by vm.shelves.collectAsState()
-    val snack = remember { SnackbarHostState() }; val deleted by vm.deleted.collectAsState()
-    LaunchedEffect(deleted) {
-        if (deleted != null) { val r = snack.showSnackbar("Note deleted", "Undo"); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
-    }
-    Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) }, bottomBar = { BottomBar({ nav.navigate("collections") }, { nav.navigate("edit/0") }, { nav.navigate("search") }) }) { pad ->
-        Column(Modifier.padding(pad).padding(horizontal = 15.dp).verticalScroll(rememberScrollState())) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                Box(Modifier.size(30.dp).clip(CircleShape).background(t.tint).tap { style = true }, Alignment.Center) { Text("J", fontSize = 13.sp) }
-                Text("Scrapbook", fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 21.sp)
-                Text("${list.size}", color = androidx.compose.ui.graphics.Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clip(CircleShape).background(t.acc).padding(horizontal = 10.dp, vertical = 3.dp))
+private fun GBar(w: Float, h: Int, c: Color) { Box(Modifier.fillMaxWidth(w).height(h.dp).clip(RoundedCornerShape(2.dp)).background(c)) }
+
+/** A tiny wireframe of each page layout. */
+@Composable
+private fun LayoutGlyph(l: Layout) {
+    val t = LocalSb.current; val bar = Sb.mute.copy(alpha = .55f); val ln = Sb.mute.copy(alpha = .3f); val img = t.acc.copy(alpha = .4f)
+    Column(Modifier.size(58.dp, 44.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        when (l) {
+            Layout.Classic -> { GBar(.6f, 5, bar); GBar(1f, 3, ln); GBar(1f, 3, ln); GBar(.7f, 3, ln) }
+            Layout.Journal -> {
+                GBar(.35f, 3, ln); GBar(.7f, 5, bar); GBar(1f, 3, ln); GBar(.8f, 3, ln)
+                Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(3.dp)) { repeat(3) { Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(2.dp)).background(img)) } }
             }
-            if (list.isEmpty()) Text("Your archive is empty.\nTap + to save your first note.", color = Sb.mute, fontFamily = headFont(), fontSize = 16.sp, modifier = Modifier.padding(vertical = 60.dp)) else FanStack(list)
-            Text("Pinned", color = Sb.mute, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                items(list.filter { it.pinned }) { ItemImage(it, Modifier.size(80.dp, 62.dp), radius = 31.dp) }
-            }
-            Text("From your archive  ›", fontFamily = headFont(), fontSize = 13.sp, modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(t.radius)).background(t.tint).tap { nav.navigate("rediscover") }.padding(12.dp))
-            Text("Recent", fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.padding(top = 14.dp, bottom = 6.dp))
-            list.take(8).forEach { RecentCard(it) { nav.navigate("item/${it.id}") } }
-            Spacer(Modifier.height(6.dp))
-            if (shelves.isEmpty()) Text("＋ Create your first collection", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("Create a collection") { nav.navigate("collections") })
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                shelves.sortedByDescending { s -> list.count { it.collection == s.name } }.take(2).forEach { s ->
-                    Column(Modifier.weight(1f).tap { nav.navigate("shelf/${s.name}") }, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.fillMaxWidth().height(100.dp).clip(RoundedCornerShape(26.dp)).background(if (s.color == 2) Sb.notes[0] else t.tint)) {
-                            FlatImage(s.color, Modifier.offset(22.dp, 20.dp).size(38.dp, 48.dp).rotate(-9f), 9.dp)
-                            FlatImage(s.color + 2, Modifier.offset(48.dp, 34.dp).size(38.dp, 48.dp).rotate(6f), 9.dp)
-                        }
-                        Text(s.name, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-                        Text(itemsLabel(list.count { it.collection == s.name }), fontSize = 10.5.sp, color = Sb.mute)
-                    }
+            Layout.Gallery -> { Box(Modifier.fillMaxWidth().height(24.dp).clip(RoundedCornerShape(4.dp)).background(img)); GBar(.5f, 3, bar); GBar(1f, 3, ln) }
+            Layout.TwoColumn -> {
+                GBar(.5f, 5, bar)
+                Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(4.dp)) {
+                    repeat(2) { Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { GBar(1f, 3, ln); GBar(1f, 3, ln); GBar(.7f, 3, ln); GBar(1f, 3, ln) } }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Layout.Quote -> Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) { GBar(.8f, 5, bar); GBar(.6f, 5, bar); Spacer(Modifier.height(4.dp)); GBar(.3f, 3, ln) }
+            Layout.Reference -> {
+                GBar(.5f, 5, bar)
+                Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.weight(1.4f), verticalArrangement = Arrangement.spacedBy(3.dp)) { GBar(1f, 3, ln); GBar(1f, 3, ln); GBar(.7f, 3, ln) }
+                    Box(Modifier.weight(1f).height(24.dp).clip(RoundedCornerShape(3.dp)).background(ln))
+                }
+            }
+            Layout.Collection -> {
+                Box(Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(4.dp)).background(img))
+                Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(3.dp)) { repeat(3) { Box(Modifier.weight(1f).height(14.dp).clip(RoundedCornerShape(2.dp)).background(ln)) } }
+            }
+            Layout.Blank -> Box(Modifier.fillMaxSize()) {
+                Box(Modifier.align(Alignment.TopStart).size(26.dp, 16.dp).rotate(-4f).clip(RoundedCornerShape(2.dp)).background(img))
+                Box(Modifier.align(Alignment.CenterEnd).size(24.dp, 14.dp).rotate(3f).clip(RoundedCornerShape(2.dp)).background(bar))
+                Box(Modifier.align(Alignment.BottomStart).size(20.dp, 10.dp).clip(RoundedCornerShape(2.dp)).background(ln))
+            }
         }
-        if (style) AppStyleSheet(vm) { style = false }
-        if (!welcomed) Welcome({ vm.dismissWelcome() }, { vm.addExamples() })
     }
 }
 
+private fun shortLabel(l: Layout) = when (l) { Layout.TwoColumn -> "Columns"; Layout.Blank -> "Canvas"; else -> l.label }
+
+/** Pick how a note's page is laid out. The preview updates as you tap; nothing is lost when you switch. */
 @Composable
 fun LayoutScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val t = LocalSb.current; val list by vm.items.collectAsState()
-    val item = list.firstOrNull { it.id == id } ?: list.first()
-    var spacing by remember { mutableFloatStateOf(0.6f) }
+    val item = list.firstOrNull { it.id == id } ?: list.firstOrNull()
     Scaffold(containerColor = t.paper) { pad ->
-        Column(Modifier.padding(pad).padding(15.dp)) {
-            Text("Choose a layout", fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 18.sp, modifier = Modifier.padding(bottom = 12.dp))
-            Box(Modifier.fillMaxWidth().height(230.dp).clip(RoundedCornerShape(t.radius)).background(Sb.notes[item.color % 5].copy(alpha = .4f)).padding(14.dp)) {
-                ItemPage(item, list)
+        if (item != null) Column(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
+                Text("Choose a layout", Modifier.weight(1f), textAlign = TextAlign.Center, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 20.sp)
+                Spacer(Modifier.size(48.dp))
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
+            Box(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(28.dp)).background(pageTint(item.color) ?: Sb.card).padding(18.dp)) { ItemPage(item, list) }
+            Spacer(Modifier.height(16.dp))
             Layout.entries.chunked(4).forEach { row ->
-                Row(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.padding(bottom = 8.dp), Arrangement.spacedBy(8.dp)) {
                     row.forEach { l ->
                         val on = l == item.layout
-                        Box(Modifier.weight(1f).height(54.dp).clip(RoundedCornerShape(11.dp))
-                            .background(if (on) t.tint else Sb.card)
-                            .border(1.5.dp, if (on) t.acc else Sb.line, RoundedCornerShape(11.dp))
-                            .tap { vm.setLayout(item.id, l) }, Alignment.Center) {
-                            Text(l.label, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                        Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(Sb.card)
+                            .border(if (on) 2.dp else 1.dp, if (on) Sb.ink else Sb.line, RoundedCornerShape(20.dp)).tap(l.label) { vm.setLayout(item.id, l) }.padding(vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LayoutGlyph(l)
+                            Text(shortLabel(l), fontSize = 12.sp, maxLines = 1, color = if (on) Sb.ink else Sb.mute, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal)
                         }
                     }
                 }
             }
-            Text("Spacing", fontSize = 10.5.sp, color = Sb.mute, modifier = Modifier.padding(top = 12.dp))
-            Slider(spacing, { spacing = it }, colors = SliderDefaults.colors(thumbColor = t.acc, activeTrackColor = t.acc))
+            Text("Spacing", fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
+            Seg(listOf("Airy", "Cozy", "Compact"), item.density) { vm.save(item.copy(density = it)) }
             Spacer(Modifier.weight(1f))
-            Button({ nav.popBackStack() }, Modifier.fillMaxWidth().navigationBarsPadding(), colors = ButtonDefaults.buttonColors(containerColor = t.acc)) {
-                Text("Use ${item.layout.label}")
-            }
+            Text("Use ${item.layout.label}", Modifier.fillMaxWidth().padding(vertical = 12.dp).clip(RoundedCornerShape(28.dp)).background(Sb.ink).tap("Done") { nav.popBackStack() }.padding(vertical = 16.dp),
+                color = Sb.card, textAlign = TextAlign.Center, fontWeight = FontWeight.Medium, fontSize = 16.sp)
         }
     }
 }

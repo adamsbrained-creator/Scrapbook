@@ -1,9 +1,9 @@
 # Custom fonts
 
-Scrapbook uses Newsreader (serif) and Figtree (sans) when they are present, and falls back to the system
-serif/sans otherwise, so the app builds either way.
+The new design uses **Outfit**. Without the font file the app falls back to the system sans-serif, so it builds either way.
 
-1. Download Newsreader and Figtree from Google Fonts.
-2. Copy one regular .ttf of each into `app/src/main/res/font/` and name them exactly
-   `newsreader.ttf` and `figtree.ttf` (lowercase, no dashes).
-3. Rebuild. Headings and body text pick them up automatically.
+1. Download Outfit from Google Fonts (a regular .ttf is enough; the variable font file also works).
+2. Put it in `app/src/main/res/font/` and name it exactly `outfit.ttf` (lowercase).
+3. Rebuild. Headings and note text pick it up automatically.
+
+Optional extras for the older serif look: `newsreader.ttf` (serif) and `figtree.ttf` (sans fallback), same folder.

@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -78,7 +80,7 @@ val LocalToggle = compositionLocalOf<(String, String) -> Unit> { { _, _ -> } }
 @Composable
 private fun Body(text: String) {
     val st = LocalPage.current; val toggle = LocalToggle.current; val acc = LocalSb.current.acc
-    val fam = st.family ?: LocalFonts.current.first; val head = st.family ?: headFont()
+    val fam = st.family ?: headFont(); val head = st.family ?: headFont()
     Column {
         text.lines().forEach { l ->
             when {
@@ -207,41 +209,50 @@ private fun Act(label: String, onClick: () -> Unit) {
         .tap(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
 }
 
-/** Quiet reading view with metadata on top and actions at the bottom. */
+/** Reading view: a quiet page. Edit and share sit in the top bar, everything else in the menu. */
 @Composable
 fun ItemScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val t = LocalSb.current; val list by vm.items.collectAsState()
     val item = list.firstOrNull { it.id == id }
-    var sheet by remember { mutableStateOf(false) }
-    val ctx = LocalContext.current
+    var sheet by remember { mutableStateOf(false) }; var menu by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<String?>(null) }
-    Scaffold(containerColor = t.paper) { pad ->
-        if (item != null) Box(Modifier.fillMaxSize().padding(pad).background(Sb.notes[item.color % 5].copy(alpha = .4f))) {
-            Column(Modifier.fillMaxSize().padding(horizontal = 18.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), Arrangement.SpaceBetween) {
-                    Text("‹ Back", fontSize = 13.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
-                    Meta("${item.collection} · ${item.kind.name} · ${date(item.savedAt)}")
-                }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    CompositionLocalProvider(LocalToggle provides { a, b -> vm.save(item.copy(body = item.body.replaceFirst(a, b))) },
-                        LocalCanvas provides { s -> vm.save(item.copy(canvas = s)) }) { ItemPage(item, list) }
-                }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).navigationBarsPadding().padding(vertical = 12.dp), Arrangement.spacedBy(6.dp)) {
-                    Act("Edit") { nav.navigate("edit/${item.id}") }
-                    Act("Share") {
+    val ctx = LocalContext.current
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(containerColor = t.paper) { pad ->
+            if (item != null) Column(Modifier.fillMaxSize().padding(pad).background(pageTint(item.color) ?: Color.Transparent)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
+                    Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                        Text(item.collection, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        Text("${item.kind.name} · ${date(item.savedAt)}", fontSize = 11.sp, color = Sb.mute, maxLines = 1)
+                    }
+                    Box(Modifier.size(44.dp).tap("Edit") { nav.navigate("edit/${item.id}") }, Alignment.Center) { Ic("edit", 24.dp, t.acc) }
+                    Box(Modifier.size(44.dp).tap("Share") {
                         ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, item.title); putExtra(Intent.EXTRA_TEXT, item.title + "\n\n" + item.body)
                         }, "Share note"))
+                    }, Alignment.Center) { Ic("share", 24.dp, Sb.ink) }
+                    Box {
+                        Box(Modifier.size(44.dp).tap("More options") { menu = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text(if (item.pinned) "Unpin" else "Pin") }, onClick = { menu = false; vm.togglePin(item) })
+                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; vm.duplicate(item) { nav.navigate("item/$it") } })
+                            DropdownMenuItem(text = { Text("Add to collection") }, onClick = { menu = false; panel = "move" })
+                            DropdownMenuItem(text = { Text("Tags") }, onClick = { menu = false; panel = "tags" })
+                            DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; nav.navigate("layouts/${item.id}") })
+                            DropdownMenuItem(text = { Text("Page style") }, onClick = { menu = false; sheet = true })
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; vm.delete(item); nav.popBackStack("home", false) })
+                        }
                     }
-                    Act("Duplicate") { vm.duplicate(item) { nav.navigate("item/$it") } }
-                    Act("Collection") { panel = "move" }
-                    Act("Tags") { panel = "tags" }
-                    Act(if (item.pinned) "Unpin" else "Pin") { vm.togglePin(item) }
-                    Act("Layout") { nav.navigate("layouts/${item.id}") }
-                    Act("Style") { sheet = true }
-                    Act("Delete") { vm.delete(item); nav.popBackStack("home", false) }
+                }
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line))
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
+                    CompositionLocalProvider(LocalToggle provides { a, b -> vm.save(item.copy(body = item.body.replaceFirst(a, b))) },
+                        LocalCanvas provides { s -> vm.save(item.copy(canvas = s)) }) { ItemPage(item, list) }
                 }
             }
+        }
+        if (item != null) {
             if (sheet) CustomizeSheet(item, vm) { sheet = false }
             if (panel == "move") MoveSheet(item, vm) { panel = null }
             if (panel == "tags") TagSheet(item, vm) { panel = null }

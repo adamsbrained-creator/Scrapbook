@@ -40,10 +40,9 @@ fun FlatImage(i: Int, modifier: Modifier = Modifier, radius: Dp = LocalSb.curren
 
 @Composable
 fun Chip(text: String, on: Boolean = false, onClick: () -> Unit = {}) {
-    Text(text, fontSize = 11.sp, color = if (on) Sb.card else Sb.ink,
-        modifier = Modifier.minimumInteractiveComponentSize().semantics { selected = on }.clip(CircleShape).background(if (on) Sb.ink else Sb.card)
-            .border(1.dp, Sb.line, CircleShape).tap(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 5.dp))
+    Text(text, fontSize = 13.sp, color = if (on) Sb.card else Sb.ink,
+        modifier = Modifier.minimumInteractiveComponentSize().semantics { selected = on }.clip(CircleShape).background(if (on) Sb.ink else Sb.line.copy(alpha = .5f)).tap(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 7.dp))
 }
 
 @Composable
@@ -106,3 +105,17 @@ fun Modifier.tap(label: String? = null, onClick: () -> Unit): Modifier = clickab
 
 /** Same, with a 48dp minimum touch target; for text links and small icons. */
 fun Modifier.link(label: String? = null, onClick: () -> Unit): Modifier = minimumInteractiveComponentSize().tap(label, onClick)
+
+/** Plain, then five pastel page colors. selected is the stored page color (0 = plain). */
+@Composable
+fun ColorDots(selected: Int, onPick: (Int) -> Unit) {
+    val names = listOf("Plain", "Butter", "Sage", "Blue", "Rose", "Lilac")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        names.forEachIndexed { i, n ->
+            Box(Modifier.size(28.dp).clip(CircleShape).background(if (i == 0) Sb.card else Sb.notes[i - 1])
+                .border(if (i == selected) 2.dp else 1.dp, if (i == selected) Sb.ink else Sb.line, CircleShape).tap(n) { onPick(i) }, Alignment.Center) {
+                if (i == 0) Ic("none", 18.dp, Sb.mute)
+            }
+        }
+    }
+}

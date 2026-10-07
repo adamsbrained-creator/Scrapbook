@@ -7,6 +7,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -54,37 +62,96 @@ fun Sticky(item: Item, onClick: () -> Unit) {
     }
 }
 
-/** A collection as a wall of stickies, filtered by type. name == "All" shows everything. */
+/** A collection (or "All" / "Inbox"): title and count, search inside it, filters, then its notes. */
 @Composable
 fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
-    val t = LocalSb.current; val all by vm.items.collectAsState()
-    var kind by remember { mutableStateOf<Kind?>(null) }
-    val shown = all.filter { (name == "All" || it.collection == name) && (kind == null || it.kind == kind) }
-    val shelves by vm.shelves.collectAsState(); val shelf = shelves.firstOrNull { it.name == name }
+    val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
+    val shelf = shelves.firstOrNull { it.name == name }
     var editing by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
+    var q by remember { mutableStateOf("") }; var kind by remember { mutableStateOf<Kind?>(null) }
+    var kindMenu by remember { mutableStateOf(false) }; var sortMenu by remember { mutableStateOf(false) }; var more by remember { mutableStateOf(false) }
+    var byTitle by rememberSaveable { mutableStateOf(false) }; var grid by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(shelf) { if (shelf != null) existed = true else if (existed) nav.popBackStack() }
-    Scaffold(containerColor = t.paper, bottomBar = { BottomBar({ nav.popBackStack() }, { nav.navigate("edit/0") }, { nav.navigate("search") }) }) { pad ->
-        Column(Modifier.padding(pad).padding(horizontal = 15.dp)) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), Arrangement.spacedBy(12.dp), Alignment.CenterVertically) {
-                Text("‹", fontSize = 22.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
-                Column {
-                    Text(name, fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
-                    Text(itemsLabel(shown.size), fontSize = 10.5.sp, color = Sb.mute)
+    val inShelf = all.filter { name == "All" || it.collection == name }
+    val shown = inShelf.filter { n -> (kind == null || n.kind == kind) && (q.isBlank() || listOf(n.title, n.body, n.tags.joinToString(" ")).any { it.contains(q, true) }) }
+        .let { l -> if (byTitle) l.sortedBy { it.title.lowercase() } else l.sortedByDescending { it.savedAt } }
+        .sortedByDescending { it.pinned }
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(containerColor = t.paper) { pad ->
+            Box(Modifier.fillMaxSize().padding(pad)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
+                            Text("scrapbook", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 22.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                            Box {
+                                Box(Modifier.size(48.dp).tap("More options") { more = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
+                                DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                                    if (shelf != null) DropdownMenuItem(text = { Text("Edit collection") }, onClick = { more = false; editing = true })
+                                    DropdownMenuItem(text = { Text("All collections") }, onClick = { more = false; nav.navigate("collections") })
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Column {
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(name, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 36.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                                Text("  " + (if (inShelf.size == 1) "1 note" else "${inShelf.size} notes"), fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 7.dp))
+                            }
+                            if (shelf != null && shelf.description.isNotBlank()) Text(shelf.description, fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                    if (shelf?.coverUri != null) item {
+                        ItemImage(Item(title = "", body = "", kind = Kind.Image, collection = "", imageUri = shelf.coverUri, color = shelf.color), Modifier.fillMaxWidth().height(120.dp), 24.dp)
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .55f)).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Ic("search", 22.dp, Sb.mute); Spacer(Modifier.width(12.dp))
+                            BasicTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = Sb.ink), cursorBrush = SolidColor(t.acc),
+                                decorationBox = { inner -> Box { if (q.isEmpty()) Text("Search in $name", color = Sb.mute, fontSize = 16.sp); inner() } })
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box {
+                                    Row(Modifier.tap("Filter by type") { kindMenu = true }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(kind?.let { it.name + "s" } ?: "All notes", fontSize = 15.sp, color = Sb.mute); Ic("down", 18.dp, Sb.mute)
+                                    }
+                                    DropdownMenu(expanded = kindMenu, onDismissRequest = { kindMenu = false }) {
+                                        DropdownMenuItem(text = { Text("All notes") }, onClick = { kindMenu = false; kind = null })
+                                        Kind.entries.forEach { k -> DropdownMenuItem(text = { Text(k.name + "s") }, onClick = { kindMenu = false; kind = k }) }
+                                    }
+                                }
+                                Box {
+                                    Row(Modifier.tap("Change sort order") { sortMenu = true }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(if (byTitle) "Title" else "Latest", fontSize = 15.sp, color = Sb.mute); Ic("down", 18.dp, Sb.mute)
+                                    }
+                                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                                        DropdownMenuItem(text = { Text("Latest") }, onClick = { sortMenu = false; byTitle = false })
+                                        DropdownMenuItem(text = { Text("Title") }, onClick = { sortMenu = false; byTitle = true })
+                                    }
+                                }
+                            }
+                            Row(Modifier.clip(RoundedCornerShape(26.dp)).background(Sb.line.copy(alpha = .6f)).padding(4.dp)) {
+                                SegIcon("list", !grid) { grid = false }; SegIcon("grid", grid) { grid = true }
+                            }
+                        }
+                    }
+                    if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else "Nothing here yet. Tap New note to add the first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
+                    else if (grid) items(shown.chunked(2)) { pair ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            pair.forEach { NoteTile(it, nav, Modifier.weight(1f)) }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    } else items(shown, key = { it.id }) { NoteRow(it, nav) }
                 }
-                if (shelf != null) { Spacer(Modifier.weight(1f)); Text("Edit", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("Edit collection") { editing = true }) }
-            }
-            if (shelf != null) {
-                if (shelf.coverUri != null) ItemImage(Item(title = "", body = "", kind = Kind.Image, collection = "", imageUri = shelf.coverUri, color = shelf.color), Modifier.fillMaxWidth().height(110.dp))
-                if (shelf.description.isNotBlank()) Text(shelf.description, fontSize = 12.sp, color = Sb.mute, modifier = Modifier.padding(vertical = 6.dp))
-            }
-            Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(5.dp)) {
-                Chip("All", kind == null) { kind = null }
-                Kind.entries.forEach { Chip(it.name, kind == it) { kind = it } }
-            }
-            if (shown.isEmpty()) Text("Nothing here yet. Tap + to add something.", color = Sb.mute, fontSize = 12.sp, modifier = Modifier.padding(top = 24.dp))
-            Row(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 12.dp), Arrangement.spacedBy(8.dp)) {
-                listOf(0, 1).forEach { col ->
-                    Column(Modifier.weight(1f)) { shown.filterIndexed { i, _ -> i % 2 == col }.forEach { Sticky(it) { nav.navigate("item/${it.id}") } } }
+                Row(Modifier.align(Alignment.BottomEnd).padding(20.dp).shadow(10.dp, RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp)).background(Sb.ink)
+                    .tap("New note") { vm.pendingShelf = if (shelf != null) name else null; nav.navigate("edit/0") }.padding(horizontal = 24.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Ic("edit", 24.dp, Sb.card); Text("New note", color = Sb.card, fontWeight = FontWeight.Medium, fontSize = 17.sp)
                 }
             }
         }
@@ -102,38 +169,47 @@ private fun hl(text: String, q: String, mark: Color): AnnotatedString = buildAnn
     }
 }
 
-/** Global search over titles, body, tags and collections, with type filters and highlighted matches. */
+/** Search across titles, text, tags and collections, with type filters and highlighted matches. */
 @Composable
 fun SearchScreen(vm: ArchiveViewModel, nav: NavController) {
-    val t = LocalSb.current; val all by vm.items.collectAsState()
+    val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     var q by remember { mutableStateOf("") }; var kind by remember { mutableStateOf<Kind?>(null) }
-    val res = all.filter { i -> (kind == null || i.kind == kind) && (q.isBlank() || listOf(i.title, i.body, i.collection, i.tags.joinToString(" ")).any { it.contains(q, true) }) }
-    val mark = Color(0xFFF1E2A8)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    val res = all.filter { n -> (kind == null || n.kind == kind) && (q.isBlank() || listOf(n.title, n.body, n.collection, n.tags.joinToString(" ")).any { it.contains(q, true) }) }
+        .sortedByDescending { it.savedAt }
+    val shelfHits = if (q.isBlank()) emptyList() else shelves.filter { it.name.contains(q, true) || it.description.contains(q, true) }
+    val mark = t.acc.copy(alpha = .28f)
     Scaffold(containerColor = t.paper) { pad ->
-        Column(Modifier.padding(pad).padding(horizontal = 15.dp)) {
-            Row(Modifier.padding(vertical = 10.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
-                Text("‹", fontSize = 22.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
-                BasicTextField(q, { q = it }, Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Sb.line.copy(alpha = .6f)).padding(12.dp),
-                    singleLine = true, textStyle = TextStyle(fontSize = 13.sp, color = Sb.ink), cursorBrush = SolidColor(t.acc),
-                    decorationBox = { inner -> Box { if (q.isEmpty()) Text("Search titles, tags, quotes…", color = Sb.mute, fontSize = 13.sp); inner() } })
+        Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
+                Row(Modifier.weight(1f).padding(end = 12.dp).clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .55f)).padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Ic("search", 22.dp, Sb.mute); Spacer(Modifier.width(12.dp))
+                    BasicTextField(q, { q = it }, Modifier.weight(1f).focusRequester(focus), singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = Sb.ink), cursorBrush = SolidColor(t.acc),
+                        decorationBox = { inner -> Box { if (q.isEmpty()) Text("Search notes, tags, collections", color = Sb.mute, fontSize = 16.sp); inner() } })
+                    if (q.isNotEmpty()) Box(Modifier.size(28.dp).tap("Clear search") { q = "" }, Alignment.Center) { Text("✕", color = Sb.mute, fontSize = 14.sp) }
+                }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), Arrangement.spacedBy(8.dp)) {
                 Chip("All", kind == null) { kind = null }
-                Kind.entries.forEach { Chip(it.name, kind == it) { kind = it } }
+                Kind.entries.forEach { k -> Chip(k.name + "s", kind == k) { kind = k } }
             }
-            Text("${res.size} results", fontSize = 10.5.sp, color = Sb.mute, modifier = Modifier.padding(vertical = 8.dp))
-            if (res.isEmpty()) Text("No matches. Try a tag or a collection name.", color = Sb.mute, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp))
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                res.forEach { i ->
-                    Row(Modifier.fillMaxWidth().tap { nav.navigate("item/${i.id}") }.padding(vertical = 9.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
-                        ItemImage(i, Modifier.size(40.dp), 10.dp)
-                        Column {
-                            Text(hl(i.title, q, mark), fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text(hl(plainPreview(i.body), q, mark), fontSize = 10.5.sp, color = Sb.mute, maxLines = 1)
-                            Text("${i.collection} · ${i.kind.name}", fontSize = 9.5.sp, color = Sb.mute)
-                        }
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (shelfHits.isNotEmpty()) item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
+                        Text("Collections", fontSize = 13.sp, color = Sb.mute)
+                        shelfHits.forEach { s -> Chip(s.name) { nav.navigate("shelf/${s.name}") } }
                     }
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line))
+                }
+                item { Text(if (res.size == 1) "1 result" else "${res.size} results", fontSize = 13.sp, color = Sb.mute) }
+                items(res, key = { it.id }) { n ->
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(hl(n.title, q, mark), fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                        Text(hl(plainPreview(n.body), q, mark), fontSize = 14.sp, color = Sb.mute, maxLines = 2)
+                        Text("${n.collection} · ${n.kind.name}", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
             }
         }
@@ -153,30 +229,39 @@ fun RediscoverScreen(vm: ArchiveViewModel, nav: NavController) {
     var i by remember { mutableIntStateOf(0) }; var x by remember { mutableFloatStateOf(0f) }
     fun next(keep: Boolean) { queue.getOrNull(i)?.let { if (keep && !it.pinned) vm.togglePin(it) }; i++; x = 0f }
     val cur = queue.getOrNull(i)
-    Scaffold(containerColor = t.tint.copy(alpha = .5f)) { pad ->
-        Column(Modifier.padding(pad).padding(horizontal = 18.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), Arrangement.SpaceBetween) {
-                Text("✕", fontSize = 16.sp, modifier = Modifier.link("Go back") { nav.popBackStack() })
-                Text("From your archive", fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                Text("${minOf(i + 1, queue.size)}/${queue.size}", fontSize = 11.sp, color = Sb.mute)
+    Scaffold(containerColor = t.paper) { pad ->
+        Column(Modifier.padding(pad).padding(horizontal = 20.dp).fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).tap("Close") { nav.popBackStack() }, Alignment.Center) { Text("✕", fontSize = 20.sp, color = Sb.ink) }
+                Text("From your archive", Modifier.weight(1f), textAlign = TextAlign.Center, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 18.sp)
+                Text(if (queue.isEmpty()) "0/0" else "${minOf(i + 1, queue.size)}/${queue.size}", Modifier.width(48.dp), textAlign = TextAlign.End, fontSize = 13.sp, color = Sb.mute)
             }
             Spacer(Modifier.height(24.dp))
-            if (cur == null) Text("That's everything for now.", fontFamily = headFont(), fontSize = 20.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 80.dp))
-            else Box(Modifier.fillMaxWidth().height(300.dp)) {
-                Box(Modifier.matchParentSize().padding(horizontal = 8.dp).rotate(-5f).clip(RoundedCornerShape(20.dp)).background(Sb.notes[2]))
-                Box(Modifier.matchParentSize().padding(horizontal = 8.dp).rotate(4f).clip(RoundedCornerShape(20.dp)).background(Sb.notes[1]))
-                Column(Modifier.matchParentSize().offset { IntOffset(x.roundToInt(), 0) }.rotate(x / 25f).clip(RoundedCornerShape(20.dp)).background(Sb.notes[cur.color % 5])
+            if (cur == null) Text(if (queue.isEmpty()) "Nothing saved yet. Old notes will show up here." else "That's everything for now.", fontFamily = headFont(), fontSize = 20.sp,
+                textAlign = TextAlign.Center, modifier = Modifier.padding(top = 80.dp))
+            else Box(Modifier.fillMaxWidth().height(330.dp)) {
+                Box(Modifier.matchParentSize().padding(horizontal = 10.dp).rotate(-5f).clip(RoundedCornerShape(32.dp)).background(Sb.line))
+                Box(Modifier.matchParentSize().padding(horizontal = 10.dp).rotate(4f).clip(RoundedCornerShape(32.dp)).background(Sb.line.copy(alpha = .6f)))
+                Column(Modifier.matchParentSize().offset { IntOffset(x.roundToInt(), 0) }.rotate(x / 25f).shadow(8.dp, RoundedCornerShape(32.dp)).clip(RoundedCornerShape(32.dp)).background(Sb.card)
                     .pointerInput(i) { detectDragGestures(onDragEnd = { if (x > 200f) next(true) else if (x < -200f) next(false) else x = 0f }) { c, d -> c.consume(); x += d.x } }
-                    .padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${cur.collection} · ${cur.kind.name}", fontSize = 10.5.sp, color = Sb.mute)
-                    Text(cur.title, fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 26.sp)
-                    Text(plainPreview(cur.body, "\n"), fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, fontSize = 14.sp, lineHeight = 21.sp)
+                    .padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("${cur.collection} · ${cur.kind.name}", fontSize = 13.sp, color = Sb.mute)
+                    Text(cur.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 26.sp, lineHeight = 30.sp)
+                    Text(plainPreview(cur.body, "\n"), fontFamily = headFont(), fontSize = 16.sp, lineHeight = 24.sp, color = Sb.ink.copy(alpha = .8f), maxLines = 8)
                 }
             }
             if (cur != null) {
-                Text("You saved this ${ago(cur.savedAt)}.", fontFamily = androidx.compose.ui.text.font.FontFamily.Serif, fontSize = 14.sp, modifier = Modifier.padding(top = 26.dp))
-                Row(Modifier.padding(top = 18.dp), Arrangement.spacedBy(24.dp)) { RoundButton("✕", desc = "Let it rest") { next(false) }; RoundButton("✓", dark = true, desc = "Keep close") { next(true) } }
-                Text("Let it rest · Keep close", fontSize = 10.5.sp, color = Sb.mute, modifier = Modifier.padding(top = 10.dp))
+                Text("You saved this ${ago(cur.savedAt)}.", fontSize = 15.sp, color = Sb.mute, modifier = Modifier.padding(top = 24.dp))
+                Row(Modifier.padding(top = 18.dp), Arrangement.spacedBy(36.dp)) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(64.dp).clip(CircleShape).background(Sb.line.copy(alpha = .7f)).tap("Let it rest") { next(false) }, Alignment.Center) { Text("✕", fontSize = 22.sp, color = Sb.ink) }
+                        Text("Let it rest", fontSize = 12.sp, color = Sb.mute)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(64.dp).clip(CircleShape).background(Sb.ink).tap("Keep close") { next(true) }, Alignment.Center) { Text("✓", fontSize = 24.sp, color = Sb.card) }
+                        Text("Keep close", fontSize = 12.sp, color = Sb.mute)
+                    }
+                }
             }
         }
     }

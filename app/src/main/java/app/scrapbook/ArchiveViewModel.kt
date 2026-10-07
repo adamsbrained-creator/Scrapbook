@@ -31,6 +31,9 @@ private val WELCOMED = booleanPreferencesKey("welcomed")
 data class Incoming(val text: String, val subject: String, val images: List<Uri>)
 
 class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
+    /** Set by a collection screen so the next new note starts in that collection. */
+    var pendingShelf: String? = null
+    fun takePendingShelf(): String? { val s = pendingShelf; pendingShelf = null; return s }
     val incoming = MutableStateFlow<Incoming?>(null)
     fun clearIncoming() { incoming.value = null }
     private val dao = Db.get(app).dao()
@@ -39,7 +42,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
 
     private val ds = app.dataStore
     val theme: StateFlow<SbTheme> = ds.data.map { p ->
-        Themes[(p[ACC] ?: 0).coerceIn(Themes.indices)].copy(serif = p[SERIF] ?: true, radius = (p[RAD] ?: 14).dp)
+        Themes[(p[ACC] ?: 0).coerceIn(Themes.indices)].copy(serif = p[SERIF] ?: false, radius = (p[RAD] ?: 24).dp)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Themes[0])
     private fun edit(f: (MutablePreferences) -> Unit) { viewModelScope.launch { ds.edit { f(it) } } }
     val welcomed: StateFlow<Boolean> = ds.data.map { it[WELCOMED] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, true)

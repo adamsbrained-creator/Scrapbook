@@ -26,31 +26,39 @@ import app.scrapbook.*
 
 @Composable
 fun Seg(options: List<String>, sel: Int, onSel: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(Sb.line.copy(alpha = .6f)).padding(2.dp)) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Sb.line.copy(alpha = .6f)).padding(4.dp)) {
         options.forEachIndexed { i, o ->
-            Text(o, Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(if (i == sel) Sb.card else Color.Transparent)
-                .tap { onSel(i) }.semantics { selected = i == sel }.padding(vertical = 6.dp), fontSize = 11.sp, textAlign = TextAlign.Center)
+            Text(o, Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (i == sel) Sb.ink else Color.Transparent)
+                .tap { onSel(i) }.semantics { selected = i == sel }.padding(vertical = 10.dp),
+                fontSize = 14.sp, textAlign = TextAlign.Center, color = if (i == sel) Sb.card else Sb.ink)
         }
     }
 }
 
-@Composable private fun Lb(text: String) = Text(text, fontSize = 10.5.sp, color = Sb.mute, modifier = Modifier.padding(top = 6.dp))
+/** A rounded gray box around a text field. */
+@Composable
+fun InputBox(content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Sb.line.copy(alpha = .55f)).padding(horizontal = 16.dp, vertical = 14.dp)) { content() }
+}
+
+@Composable private fun Lb(text: String) = Text(text, fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(top = 8.dp))
 
 @Composable
 private fun Swatch(c: Color, on: Boolean, name: String, onClick: () -> Unit) {
-    Box(Modifier.size(26.dp).clip(CircleShape).background(c).border(if (on) 2.dp else 1.dp, if (on) Sb.ink else Sb.line, CircleShape).tap(name, onClick).semantics { selected = on })
+    Box(Modifier.size(32.dp).clip(CircleShape).background(c).border(if (on) 2.dp else 1.dp, if (on) Sb.ink else Sb.line, CircleShape).tap(name, onClick).semantics { selected = on })
 }
 
 @Composable
 fun Sheet(title: String, onDone: () -> Unit, doneLabel: String = "Done", content: @Composable ColumnScope.() -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0x55000000)).tap(onClick = onDone)) {
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(Sb.card).pointerInput(Unit) { detectTapGestures { } }.navigationBarsPadding().imePadding().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, fontFamily = headFont(), fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            content()
-            Text(doneLabel, Modifier.fillMaxWidth().padding(top = 6.dp).clip(CircleShape).background(LocalSb.current.acc).tap(onClick = onDone).padding(12.dp),
-                color = Color.White, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+    Box(Modifier.fillMaxSize().background(Color(0x66000000)).tap(onClick = onDone)) {
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = 680.dp)
+            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Sb.card)
+            .pointerInput(Unit) { detectTapGestures { } }.navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 14.dp)) {
+            Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Sb.line))
+            Text(title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 22.sp, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+            Text(doneLabel, Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(28.dp)).background(Sb.ink).tap(doneLabel, onDone).padding(vertical = 16.dp),
+                color = Sb.card, textAlign = TextAlign.Center, fontWeight = FontWeight.Medium, fontSize = 16.sp)
         }
     }
 }
@@ -59,7 +67,7 @@ fun Sheet(title: String, onDone: () -> Unit, doneLabel: String = "Done", content
 @Composable
 fun CustomizeSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet("Customize page", onDone) {
     Lb("Page color")
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Sb.notes.forEachIndexed { i, c -> Swatch(c, item.color % 5 == i, listOf("Butter", "Sage", "Blue", "Rose", "Lilac")[i]) { vm.save(item.copy(color = i)) } } }
+    ColorDots(item.color) { vm.save(item.copy(color = it)) }
     Lb("Type"); Seg(listOf("Theme", "Serif", "Sans", "Mono"), item.font) { vm.save(item.copy(font = it)) }
     Lb("Density"); Seg(listOf("Airy", "Cozy", "Compact"), item.density) { vm.save(item.copy(density = it)) }
     Lb("Show")
@@ -110,8 +118,8 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
 fun Welcome(onDone: () -> Unit, onExamples: () -> Unit) = Sheet("Welcome to Scrapbook", onDone) {
     listOf("Tap + to start a note. The toolbar adds headings, lists, quotes and checklists; it saves as you type.",
         "Every page can change layout and style without losing a word.",
-        "Tap your avatar to restyle the whole app, or back it up.").forEach {
-        Text(it, fontSize = 13.sp, lineHeight = 19.sp)
+        "Tap the menu (three lines) to restyle the app, or back it up.").forEach {
+        Text(it, fontSize = 15.sp, lineHeight = 22.sp)
     }
     Chip("Add a few example notes") { onExamples(); onDone() }
 }
