@@ -46,6 +46,10 @@ object Sb {
     )
 }
 
+/** Per-page accent: 0 keeps the app accent, 1 to 5 pick one of these. */
+val PAGE_ACCENTS = listOf(Color(0xFFF46C4E), Color(0xFF5F7F66), Color(0xFF4F6F8D), Color(0xFFA8802A), Color(0xFF8E7CF0))
+fun pageAccent(i: Int): Color? = if (i <= 0) null else PAGE_ACCENTS[(i - 1) % PAGE_ACCENTS.size]
+
 /** Page color 0 means plain. 1 to 5 tint the page with one of the pastel note colors. */
 fun pageTint(color: Int): Color? = if (color <= 0) null else Sb.notes[(color - 1) % 5].copy(alpha = .4f)
 

@@ -118,7 +118,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box {
                                     Row(Modifier.tap("Filter by type") { kindMenu = true }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(kind?.let { it.name + "s" } ?: "All notes", fontSize = 15.sp, color = Sb.mute); Ic("down", 18.dp, Sb.mute)
+                                        Text(kind?.let { it.name + "s" } ?: "All notes", fontSize = 15.sp, color = Sb.mute); Ic("chevdown", 20.dp, Sb.mute)
                                     }
                                     DropdownMenu(expanded = kindMenu, onDismissRequest = { kindMenu = false }) {
                                         DropdownMenuItem(text = { Text("All notes") }, onClick = { kindMenu = false; kind = null })
@@ -127,7 +127,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                                 }
                                 Box {
                                     Row(Modifier.tap("Change sort order") { sortMenu = true }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(if (byTitle) "Title" else "Latest", fontSize = 15.sp, color = Sb.mute); Ic("down", 18.dp, Sb.mute)
+                                        Text(if (byTitle) "Title" else "Latest", fontSize = 15.sp, color = Sb.mute); Ic("chevdown", 20.dp, Sb.mute)
                                     }
                                     DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                                         DropdownMenuItem(text = { Text("Latest") }, onClick = { sortMenu = false; byTitle = false })
@@ -207,7 +207,7 @@ fun SearchScreen(vm: ArchiveViewModel, nav: NavController) {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(hl(n.title, q, mark), fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 18.sp)
-                        Text(hl(plainPreview(n.body), q, mark), fontSize = 14.sp, color = Sb.mute, maxLines = 2)
+                        Text(hl(plainPreview(bodyWithoutTitle(n.title, n.body)), q, mark), fontSize = 14.sp, color = Sb.mute, maxLines = 2)
                         Text("${n.collection} · ${n.kind.name}", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
@@ -247,7 +247,7 @@ fun RediscoverScreen(vm: ArchiveViewModel, nav: NavController) {
                     .padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("${cur.collection} · ${cur.kind.name}", fontSize = 13.sp, color = Sb.mute)
                     Text(cur.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 26.sp, lineHeight = 30.sp)
-                    Text(plainPreview(cur.body, "\n"), fontFamily = headFont(), fontSize = 16.sp, lineHeight = 24.sp, color = Sb.ink.copy(alpha = .8f), maxLines = 8)
+                    Text(plainPreview(bodyWithoutTitle(cur.title, cur.body), "\n"), fontFamily = headFont(), fontSize = 16.sp, lineHeight = 24.sp, color = Sb.ink.copy(alpha = .8f), maxLines = 8)
                 }
             }
             if (cur != null) {

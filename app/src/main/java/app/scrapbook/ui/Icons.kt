@@ -34,6 +34,7 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                 drawRoundRect(color, Offset(x * w, y * w), Size(.3f * w, .3f * w), CornerRadius(.07f * w), style = st)
             }
             "folder" -> { drawRoundRect(color, Offset(.1f * w, .26f * w), Size(.8f * w, .57f * w), CornerRadius(.1f * w), style = st); line(.14f, .2f, .4f, .2f) }
+            "chevdown" -> { line(.28f, .4f, .5f, .62f); line(.5f, .62f, .72f, .4f) }
             "chevron" -> { line(.38f, .25f, .63f, .5f); line(.63f, .5f, .38f, .75f) }
             "newfile" -> {
                 val p = Path().apply { moveTo(.22f * w, .1f * w); lineTo(.58f * w, .1f * w); lineTo(.8f * w, .32f * w); lineTo(.8f * w, .5f * w); moveTo(.22f * w, .1f * w); lineTo(.22f * w, .9f * w); lineTo(.5f * w, .9f * w) }

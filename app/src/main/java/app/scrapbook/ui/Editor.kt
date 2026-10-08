@@ -35,7 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import app.scrapbook.*
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 @Composable
@@ -130,7 +134,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val t = LocalSb.current; val list by vm.items.collectAsState(); val scope = rememberCoroutineScope()
     val existing = remember(id) { vm.items.value.firstOrNull { it.id == id } }
     var curId by remember(id) { mutableLongStateOf(id) }
-    var title by remember(id) { mutableStateOf(existing?.title ?: "") }
+    var title by remember(id) { mutableStateOf(existing?.let { x -> if (bodyWithoutTitle(x.title, x.body) != x.body) "" else x.title } ?: "") }
     var body by remember(id) { mutableStateOf(TextFieldValue(existing?.body ?: "")) }
     var color by remember(id) { mutableIntStateOf(existing?.color ?: 0) }
     var kind by remember(id) { mutableStateOf(existing?.kind ?: Kind.Note) }
@@ -141,6 +145,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     var more by remember { mutableStateOf(false) }; var menu by remember { mutableStateOf(false) }
     val undo = remember { ArrayDeque<TextFieldValue>() }; val redo = remember { ArrayDeque<TextFieldValue>() }
     var lastPush by remember { mutableLongStateOf(0L) }
+    val lock = remember { Mutex() }; var leaving by remember { mutableStateOf(false) }
     val md = remember(t.acc) { mdTransform(t.acc) }
     val live = list.firstOrNull { it.id == curId }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> uris.forEach { u -> vm.importImage(u) { imgs = imgs + it } } }
@@ -160,18 +165,22 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     fun draft(): Item? {
         if (title.isBlank() && body.text.isBlank() && imgs.isEmpty()) return null
         val firstLine = body.text.lineSequence().firstOrNull { it.isNotBlank() }?.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- )"), "")?.take(50)
-        val base = live ?: existing ?: Item(title = "", body = "", kind = kind, collection = shelf)
+        val base = vm.items.value.firstOrNull { it.id == curId } ?: existing ?: Item(title = "", body = "", kind = kind, collection = shelf)
         return base.copy(id = curId, title = title.ifBlank { firstLine ?: "Untitled" }, body = body.text, kind = kind, collection = shelf,
             color = color, imageUri = imgs.firstOrNull(), images = imgs.drop(1).joinToString("\n"), source = source,
             tags = tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }, savedAt = System.currentTimeMillis())
     }
-    suspend fun flush() {
-        val d = draft() ?: return
-        if (live != null && d.copy(savedAt = live.savedAt) == live) return
-        val r = vm.saveNow(d); if (curId == 0L) curId = r
+    /** One save at a time, and a started save always finishes, so a new note can never be created twice. */
+    suspend fun flush() = withContext(NonCancellable) {
+        lock.withLock {
+            val d = draft() ?: return@withLock
+            val cur = vm.items.value.firstOrNull { it.id == curId }
+            if (cur != null && d.copy(savedAt = cur.savedAt) == cur) return@withLock
+            val r = vm.saveNow(d); if (curId == 0L) curId = r
+        }
     }
     LaunchedEffect(title, body.text, color, kind, shelf, tags, imgs, source) { delay(600); flush() }
-    fun leave() { scope.launch { flush(); nav.popBackStack() } }
+    fun leave() { if (leaving) return; leaving = true; scope.launch { flush(); nav.popBackStack() } }
     BackHandler { leave() }
 
     Scaffold(containerColor = t.paper) { pad ->
@@ -210,7 +219,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                     }
                 }
                 BasicTextField(body, { edit(it) }, Modifier.fillMaxWidth().heightIn(min = 320.dp),
-                    textStyle = TextStyle(fontSize = 17.sp, fontFamily = headFont(), color = Sb.ink, lineHeight = 27.sp),
+                    textStyle = TextStyle(fontSize = 17.sp, fontFamily = pageFont((live ?: existing)?.font ?: 0) ?: headFont(), color = Sb.ink, lineHeight = pageLine((live ?: existing)?.density ?: 1)),
                     cursorBrush = SolidColor(t.acc), visualTransformation = md,
                     decorationBox = { inner -> Box { if (body.text.isEmpty()) Text("Write something…", color = Sb.mute, fontSize = 17.sp, fontFamily = headFont()); inner() } })
             }

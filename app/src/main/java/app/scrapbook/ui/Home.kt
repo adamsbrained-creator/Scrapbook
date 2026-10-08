@@ -4,6 +4,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +16,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -50,7 +53,7 @@ private fun TileBox(name: String, count: Int, tab: Color, modifier: Modifier, on
         Box(Modifier.align(Alignment.TopEnd).padding(end = 16.dp).width(32.dp).height(8.dp)
             .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(tab))
         Text("$count", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 22.dp))
-        Text(name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 12.dp, end = 4.dp))
+        Text(name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 12.dp, end = 4.dp))
     }
 }
 
@@ -64,13 +67,13 @@ private fun Meta(n: Item, hasPreview: Boolean) {
 
 @Composable
 fun NoteRow(n: Item, nav: NavController) {
-    val imgs = n.allImages(); val preview = plainPreview(n.body)
+    val imgs = n.allImages(); val preview = plainPreview(bodyWithoutTitle(n.title, n.body))
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(20.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (preview.isBlank()) { Meta(n, false); Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp) }
             else {
-                Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1)
+                Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Meta(n, true)
                 Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
             }
@@ -89,7 +92,7 @@ fun NoteRow(n: Item, nav: NavController) {
 fun NoteTile(n: Item, nav: NavController, modifier: Modifier) {
     Column(modifier.clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 17.sp, maxLines = 1)
+        Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Meta(n, false)
         Box(Modifier.fillMaxWidth().padding(top = 10.dp).height(140.dp), Alignment.Center) { NotePreviewArt(n) }
     }
@@ -131,16 +134,36 @@ fun NotePreviewArt(n: Item) {
     }
 }
 
+@Composable
+private fun Wordmark(modifier: Modifier, center: Boolean = false) {
+    Text("scrapbook", modifier, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 24.sp, textAlign = if (center) TextAlign.Center else TextAlign.Start)
+}
+
+/** A round white button, used by the "Round" header. */
+@Composable
+private fun RoundTop(kind: String, desc: String, onClick: () -> Unit) {
+    Box(Modifier.size(48.dp).clip(CircleShape).background(Sb.card).tap(desc, onClick), Alignment.Center) { Ic(kind, 22.dp, Sb.ink) }
+}
+
+@Composable
+private fun MoreMenu(open: Boolean, onDismiss: () -> Unit, onRediscover: () -> Unit, onCollections: () -> Unit, onStyle: () -> Unit) {
+    DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text("Rediscover") }, onClick = onRediscover)
+        DropdownMenuItem(text = { Text("Collections") }, onClick = onCollections)
+        DropdownMenuItem(text = { Text("App style and backup") }, onClick = onStyle)
+    }
+}
+
 /** Main page: collection tiles on top, then all notes as a list or grid. */
 @Composable
 fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
-    val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState()
+    val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
     val snack = remember { SnackbarHostState() }
     var style by remember { mutableStateOf(false) }; var menu by remember { mutableStateOf(false) }
     var grid by rememberSaveable { mutableStateOf(false) }; var byTitle by rememberSaveable { mutableStateOf(false) }; var asc by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(deleted) {
-        if (deleted != null) { val r = snack.showSnackbar("Note deleted", "Undo"); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
+        if (deleted != null) { val r = snack.showSnackbar("Note deleted", "Undo", duration = SnackbarDuration.Long); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
     }
     val sorted = remember(all, byTitle, asc) {
         val base = if (byTitle) all.sortedBy { it.title.lowercase() } else all.sortedBy { it.savedAt }
@@ -149,22 +172,32 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val inbox = all.count { it.collection == "Inbox" }
 
     Box(Modifier.fillMaxSize()) {
-        Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) }) { pad ->
+        Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) { d -> Snackbar(d, shape = RoundedCornerShape(20.dp), containerColor = Sb.ink, contentColor = Sb.card, actionColor = t.acc) } }) { pad ->
             Box(Modifier.fillMaxSize().padding(pad)) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
-                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            TopBtn("menu", "Settings") { style = true }
-                            Text("scrapbook", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 24.sp, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                            TopBtn("newfile", "New note") { nav.navigate("edit/0") }
-                            TopBtn("search", "Search") { nav.navigate("search") }
-                            Box {
-                                TopBtn("more", "More") { menu = true }
-                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                    DropdownMenuItem(text = { Text("Rediscover") }, onClick = { menu = false; nav.navigate("rediscover") })
-                                    DropdownMenuItem(text = { Text("Collections") }, onClick = { menu = false; nav.navigate("collections") })
-                                    DropdownMenuItem(text = { Text("App style and backup") }, onClick = { menu = false; style = true })
+                        val moreMenu: @Composable () -> Unit = {
+                            MoreMenu(menu, { menu = false }, { menu = false; nav.navigate("rediscover") }, { menu = false; nav.navigate("collections") }, { menu = false; style = true })
+                        }
+                        when (header) {
+                            0 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                TopBtn("menu", "Settings") { style = true }
+                                Wordmark(Modifier.weight(1f).padding(start = 8.dp))
+                                TopBtn("search", "Search") { nav.navigate("search") }
+                                Box { TopBtn("more", "More") { menu = true }; moreMenu() }
+                            }
+                            1 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(Modifier.weight(1f)) { TopBtn("menu", "Settings") { style = true } }
+                                Wordmark(Modifier)
+                                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
+                                    TopBtn("search", "Search") { nav.navigate("search") }
+                                    Box { TopBtn("more", "More") { menu = true }; moreMenu() }
                                 }
+                            }
+                            else -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RoundTop("search", "Search") { nav.navigate("search") }
+                                Wordmark(Modifier.weight(1f), center = true)
+                                Box { RoundTop("more", "More") { menu = true }; moreMenu() }
                             }
                         }
                     }
@@ -201,7 +234,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                             }
                         }
                     }
-                    if (sorted.isEmpty()) item { Text("No notes yet. Tap the pen to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
+                    if (sorted.isEmpty()) item { Text("No notes yet. Tap New note to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
                     else if (grid) items(sorted.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             pair.forEach { NoteTile(it, nav, Modifier.weight(1f)) }
@@ -209,8 +242,11 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                         }
                     } else items(sorted, key = { it.id }) { NoteRow(it, nav) }
                 }
-                Box(Modifier.align(Alignment.BottomEnd).padding(20.dp).size(68.dp).shadow(10.dp, RoundedCornerShape(24.dp)).clip(RoundedCornerShape(24.dp))
-                    .background(Sb.card).tap("New note") { nav.navigate("edit/0") }, Alignment.Center) { Ic("edit", 30.dp, t.acc) }
+                Row(Modifier.align(Alignment.BottomEnd).padding(20.dp).shadow(10.dp, RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp)).background(Sb.ink)
+                    .tap("New note") { vm.pendingShelf = null; nav.navigate("edit/0") }.padding(horizontal = 24.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Ic("edit", 24.dp, Sb.card); Text("New note", color = Sb.card, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+                }
             }
         }
         if (style) AppStyleSheet(vm) { style = false }

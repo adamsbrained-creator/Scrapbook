@@ -119,3 +119,17 @@ fun ColorDots(selected: Int, onPick: (Int) -> Unit) {
         }
     }
 }
+
+/** App accent (the crossed circle), then five page accents. */
+@Composable
+fun AccentDots(selected: Int, onPick: (Int) -> Unit) {
+    val names = listOf("App accent", "Coral", "Sage", "Blue", "Gold", "Violet")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        names.forEachIndexed { i, n ->
+            Box(Modifier.size(28.dp).clip(CircleShape).background(if (i == 0) Sb.card else PAGE_ACCENTS[i - 1])
+                .border(if (i == selected) 2.dp else 1.dp, if (i == selected) Sb.ink else Sb.line, CircleShape).tap(n) { onPick(i) }, Alignment.Center) {
+                if (i == 0) Ic("none", 18.dp, Sb.mute)
+            }
+        }
+    }
+}

@@ -25,6 +25,7 @@ private val ACC = intPreferencesKey("accent")
 private val SERIF = booleanPreferencesKey("serif")
 private val RAD = intPreferencesKey("radius")
 private val DARK = intPreferencesKey("dark")
+private val HEADER = intPreferencesKey("header")
 private val WELCOMED = booleanPreferencesKey("welcomed")
 
 /** Something shared into the app from elsewhere, waiting to be saved. */
@@ -49,6 +50,9 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissWelcome() = edit { it[WELCOMED] = true }
     val darkMode: StateFlow<Int> = ds.data.map { it[DARK] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     fun setDark(i: Int) = edit { it[DARK] = i }
+    /** Main page header: 0 wordmark on the left, 1 wordmark centered, 2 round buttons with a centered wordmark. */
+    val headerStyle: StateFlow<Int> = ds.data.map { it[HEADER] ?: 1 }.stateIn(viewModelScope, SharingStarted.Eagerly, 1)
+    fun setHeader(i: Int) = edit { it[HEADER] = i }
     fun setAccent(i: Int) = edit { it[ACC] = i }
     fun setSerif(b: Boolean) = edit { it[SERIF] = b }
     fun setRadius(dp: Int) = edit { it[RAD] = dp }
@@ -75,18 +79,18 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val path = withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
-                val f = File(ctx.filesDir, "img_${System.currentTimeMillis()}.jpg")
+                val f = File(ctx.filesDir, "img_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(8)}.jpg")
                 ctx.contentResolver.openInputStream(uri)?.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
                 Uri.fromFile(f).toString()
             }
             done(path)
         }
     }
-    private fun itemJson(i: Item, imgs: List<String>) = org.json.JSONObject().apply {
+    private fun itemJson(i: Item, imgs: List<String>, cover: String? = null) = org.json.JSONObject().apply {
         put("title", i.title); put("body", i.body); put("kind", i.kind.name); put("collection", i.collection)
         put("tags", org.json.JSONArray(i.tags)); put("layout", i.layout.name); put("color", i.color); put("pinned", i.pinned)
         put("savedAt", i.savedAt); put("font", i.font); put("density", i.density); put("showMeta", i.showMeta)
-        put("imageUri", imgs.firstOrNull() ?: org.json.JSONObject.NULL); put("images", org.json.JSONArray(imgs.drop(1))); put("canvas", i.canvas); put("source", i.source)
+        put("imageUri", imgs.firstOrNull() ?: org.json.JSONObject.NULL); put("images", org.json.JSONArray(imgs.drop(1))); put("canvas", i.canvas); put("source", i.source); put("accent", i.accent); put("cover", cover ?: org.json.JSONObject.NULL)
     }
 
     /** Zip with archive.json and every photo. Returns the file to share. */
@@ -97,7 +101,9 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
         items.value.forEach { i ->
             val fs = i.allImages().map { File(Uri.parse(it).path ?: "") }.filter { it.exists() }
             imgs += fs
-            arr.put(itemJson(i, fs.map { "images/${it.name}" }))
+            val cf = i.cover?.let { File(Uri.parse(it).path ?: "") }?.takeIf { it.exists() }
+            if (cf != null) imgs += cf
+            arr.put(itemJson(i, fs.map { "images/${it.name}" }, cf?.let { "images/${it.name}" }))
         }
         val sarr = org.json.JSONArray()
         shelves.value.forEach { s ->
@@ -148,6 +154,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
                         if ((o.getString("title") to at) in have) continue
                         fun imp(p: String) = Uri.fromFile(File(ctx.filesDir, "imp_${stamp}_" + File(p).name)).toString()
                         val first = o.optString("imageUri", "").takeIf { it.startsWith("images/") }?.let { imp(it) }
+                        val cov = o.optString("cover", "").takeIf { it.startsWith("images/") }?.let { imp(it) }
                         val extra = o.optJSONArray("images")?.let { a -> (0 until a.length()).map { imp(a.getString(it)) } } ?: emptyList()
                         val tags = o.optJSONArray("tags")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
                         dao.upsert(Item(title = o.getString("title"), body = o.optString("body"),
@@ -155,7 +162,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
                             collection = o.optString("collection", "Inbox"), tags = tags,
                             layout = runCatching { Layout.valueOf(o.getString("layout")) }.getOrDefault(Layout.Classic),
                             color = o.optInt("color"), pinned = o.optBoolean("pinned"), savedAt = at, font = o.optInt("font"),
-                            density = o.optInt("density", 1), showMeta = o.optBoolean("showMeta", true), imageUri = first, images = extra.joinToString("\n"), canvas = o.optString("canvas"), source = o.optString("source")))
+                            density = o.optInt("density", 1), showMeta = o.optBoolean("showMeta", true), imageUri = first, images = extra.joinToString("\n"), canvas = o.optString("canvas"), source = o.optString("source"), accent = o.optInt("accent"), cover = cov))
                         added++
                     }
                     added
@@ -196,7 +203,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
                         val lines = text.lines(); val h = lines.indexOfFirst { it.startsWith("# ") }
                         val title = (if (h >= 0) lines[h].drop(2).trim() else name ?: "Imported note").take(80)
                         val body = (if (h >= 0) lines.filterIndexed { i, _ -> i != h } else lines).joinToString("\n").trim()
-                        dao.upsert(Item(title = title, body = body, kind = Kind.Note, collection = "Inbox", color = added % 5)); added++
+                        dao.upsert(Item(title = title, body = body, kind = Kind.Note, collection = "Inbox")); added++
                     } catch (e: Exception) { }
                 }
                 added

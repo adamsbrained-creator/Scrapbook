@@ -38,3 +38,13 @@ fun extractTitle(html: String): String? =
 fun plainPreview(text: String, sep: String = " · "): String =
     text.lines().map { l -> l.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- )"), "") }
         .filter { it.isNotBlank() && it != "---" }.joinToString(sep)
+
+/**
+ * A note without a typed title gets its first line as title. This drops that first line from the body
+ * when showing the note, so the title is not repeated. Only plain lines and # headings count, never list items.
+ */
+fun bodyWithoutTitle(title: String, body: String): String {
+    val lines = body.lines(); val i = lines.indexOfFirst { it.isNotBlank() }
+    if (i < 0 || lines[i].replace(Regex("^#{1,2} "), "").trim() != title.trim()) return body
+    return lines.drop(i + 1).dropWhile { it.isBlank() }.joinToString("\n")
+}

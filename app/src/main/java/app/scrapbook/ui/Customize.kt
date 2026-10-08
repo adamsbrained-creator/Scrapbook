@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.core.content.FileProvider
@@ -68,6 +69,16 @@ fun Sheet(title: String, onDone: () -> Unit, doneLabel: String = "Done", content
 fun CustomizeSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet("Customize page", onDone) {
     Lb("Page color")
     ColorDots(item.color) { vm.save(item.copy(color = it)) }
+    Lb("Accent")
+    AccentDots(item.accent) { vm.save(item.copy(accent = it)) }
+    Lb("Cover image")
+    val pickCover = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { u ->
+        if (u != null) vm.importImage(u) { p -> vm.items.value.firstOrNull { it.id == item.id }?.let { cur -> vm.save(cur.copy(cover = p)) } }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Chip(if (item.cover == null) "Choose cover" else "Change cover") { pickCover.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+        if (item.cover != null) Chip("Remove") { vm.save(item.copy(cover = null)) }
+    }
     Lb("Type"); Seg(listOf("Theme", "Serif", "Sans", "Mono"), item.font) { vm.save(item.copy(font = it)) }
     Lb("Density"); Seg(listOf("Airy", "Cozy", "Compact"), item.density) { vm.save(item.copy(density = it)) }
     Lb("Show")
@@ -84,7 +95,7 @@ fun CustomizeSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet
 /** App-wide style: accent, heading font, corner radius. Persisted with DataStore. */
 @Composable
 fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
-    val t = LocalSb.current; val mode by vm.darkMode.collectAsState(); val ctx = LocalContext.current; val scope = rememberCoroutineScope(); var msg by remember { mutableStateOf("") }
+    val t = LocalSb.current; val mode by vm.darkMode.collectAsState(); val header by vm.headerStyle.collectAsState(); val ctx = LocalContext.current; val scope = rememberCoroutineScope(); var msg by remember { mutableStateOf("") }
     val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) vm.restoreBackup(u) { n -> msg = if (n < 0) "Couldn't read that file." else "Restored $n new items." }
     }
@@ -97,6 +108,7 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
         Lb("Headings"); Seg(listOf("Serif", "Sans"), if (t.serif) 0 else 1) { vm.setSerif(it == 0) }
         Lb("Corners"); Seg(listOf("Sharp", "Soft", "Round"), when (t.radius.value.toInt()) { 4 -> 0; 24 -> 2; else -> 1 }) { vm.setRadius(listOf(4, 14, 24)[it]) }
         Lb("Appearance"); Seg(listOf("System", "Light", "Dark"), mode) { vm.setDark(it) }
+        Lb("Main page header"); Seg(listOf("Left", "Center", "Round"), header) { vm.setHeader(it) }
         Lb("Backup")
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Chip("Back up archive") {

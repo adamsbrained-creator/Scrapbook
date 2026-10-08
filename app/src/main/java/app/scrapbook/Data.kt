@@ -45,7 +45,14 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) { db.execSQL("ALTER TABLE items ADD COLUMN images TEXT NOT NULL DEFAULT ''") }
 }
 
-@Database(entities = [Item::class, Shelf::class], version = 7, exportSchema = false)
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE items ADD COLUMN accent INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE items ADD COLUMN cover TEXT")
+    }
+}
+
+@Database(entities = [Item::class, Shelf::class], version = 8, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDb : RoomDatabase() { abstract fun dao(): ItemDao }
 
@@ -54,6 +61,6 @@ object Db {
     @Volatile private var inst: AppDb? = null
     fun get(c: android.content.Context): AppDb = inst ?: synchronized(this) {
         inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "scrapbook.db")
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).fallbackToDestructiveMigration().build().also { inst = it }
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { inst = it }
     }
 }

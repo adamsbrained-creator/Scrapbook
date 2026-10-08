@@ -1,5 +1,6 @@
 package app.scrapbook.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import app.scrapbook.*
 fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val inc by vm.incoming.collectAsState()
     val src = inc
+    BackHandler(enabled = src != null) { vm.clearIncoming() }
     if (src == null) { LaunchedEffect(Unit) { nav.popBackStack() }; return }
     val hasImage = src.images.isNotEmpty()
     val kind = classifyShare(src.text, hasImage)

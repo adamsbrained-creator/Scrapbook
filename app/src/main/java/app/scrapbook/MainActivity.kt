@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
@@ -53,6 +54,11 @@ class MainActivity : ComponentActivity() {
         val darkMode by vm.darkMode.collectAsState()
         ScrapbookTheme(theme, darkMode) {
             val nav = rememberNavController()
+            val dark = Sb.dark
+            LaunchedEffect(dark) {
+                val bars = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
+            }
             LaunchedEffect(incoming != null) { if (incoming != null) nav.navigate("capture") { launchSingleTop = true } }
             Box(Modifier.fillMaxSize().background(LocalSb.current.paper), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 640.dp).fillMaxSize()) {

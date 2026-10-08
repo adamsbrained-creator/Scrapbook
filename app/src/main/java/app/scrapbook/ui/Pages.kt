@@ -21,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -49,9 +50,10 @@ import kotlin.math.roundToInt
 data class PageStyle(val family: FontFamily?, val gap: Dp, val line: TextUnit, val showMeta: Boolean)
 val LocalPage = compositionLocalOf { PageStyle(null, 10.dp, 22.sp, true) }
 val LocalCanvas = compositionLocalOf<(String) -> Unit> { { } }
-private fun Item.style() = PageStyle(
-    when (font) { 1 -> FontFamily.Serif; 2 -> FontFamily.SansSerif; 3 -> FontFamily.Monospace; else -> null },
-    when (density) { 0 -> 16.dp; 2 -> 6.dp; else -> 10.dp }, when (density) { 0 -> 25.sp; 2 -> 19.sp; else -> 22.sp }, showMeta)
+/** Text metrics shared by the editor and the reading view, so a note looks the same in both. */
+fun pageFont(font: Int): FontFamily? = when (font) { 1 -> FontFamily.Serif; 2 -> FontFamily.SansSerif; 3 -> FontFamily.Monospace; else -> null }
+fun pageLine(density: Int): TextUnit = when (density) { 0 -> 30.sp; 2 -> 23.sp; else -> 27.sp }
+private fun Item.style() = PageStyle(pageFont(font), when (density) { 0 -> 16.dp; 2 -> 6.dp; else -> 10.dp }, pageLine(density), showMeta)
 
 private fun date(ms: Long) = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(Date(ms))
 @Composable private fun Meta(text: String) = Text(text, fontSize = 10.5.sp, color = Sb.mute)
@@ -76,33 +78,37 @@ private fun linkify(text: String): AnnotatedString {
 /** Lets a tapped checklist line rewrite the note body: (oldLine, newLine). */
 val LocalToggle = compositionLocalOf<(String, String) -> Unit> { { _, _ -> } }
 
-/** Body text with light formatting: # heading, ## subheading, > quote, - bullet, - [ ] checklist, --- divider. */
+/**
+ * Body text with light formatting: # heading, ## subheading, > quote, - bullet, - [ ] checklist, --- divider.
+ * Sizes and line heights match the editor, so a note looks the same while writing and while reading.
+ */
 @Composable
 private fun Body(text: String) {
     val st = LocalPage.current; val toggle = LocalToggle.current; val acc = LocalSb.current.acc
-    val fam = st.family ?: headFont(); val head = st.family ?: headFont()
+    val fam = st.family ?: headFont(); val lineDp = with(LocalDensity.current) { st.line.toDp() }
     Column {
         text.lines().forEach { l ->
             when {
-                l.startsWith("## ") -> Text(linkify(l.drop(3)), fontFamily = head, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, modifier = Modifier.padding(top = 6.dp))
-                l.startsWith("# ") -> Text(linkify(l.drop(2)), fontFamily = head, fontWeight = FontWeight.SemiBold, fontSize = 21.sp, modifier = Modifier.padding(top = 8.dp))
-                l.startsWith("> ") -> Row(Modifier.height(IntrinsicSize.Min).padding(vertical = 4.dp)) {
+                l.startsWith("## ") -> Text(linkify(l.drop(3)), fontFamily = fam, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = st.line)
+                l.startsWith("# ") -> Text(linkify(l.drop(2)), fontFamily = fam, fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = st.line)
+                l.startsWith("> ") -> Row(Modifier.height(IntrinsicSize.Min)) {
                     Box(Modifier.width(3.dp).fillMaxHeight().background(acc)); Spacer(Modifier.width(10.dp))
-                    Text(linkify(l.drop(2)), fontFamily = fam, fontStyle = FontStyle.Italic, fontSize = 15.sp, lineHeight = st.line)
+                    Text(linkify(l.drop(2)), fontFamily = fam, fontStyle = FontStyle.Italic, fontSize = 17.sp, lineHeight = st.line)
                 }
-                l == "---" -> Box(Modifier.fillMaxWidth().padding(vertical = 8.dp).height(1.dp).background(Sb.line))
+                l == "---" -> Box(Modifier.fillMaxWidth().height(lineDp), Alignment.Center) { Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line)) }
                 l.startsWith("- [ ] ") || l.startsWith("- [x] ") -> {
                     val done = l.startsWith("- [x] ")
-                    Row(Modifier.tap { toggle(l, (if (done) "- [ ] " else "- [x] ") + l.drop(6)) }.padding(vertical = 3.dp), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
-                        Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).background(if (done) acc else Color.Transparent).border(1.5.dp, acc, RoundedCornerShape(4.dp)))
-                        Text(linkify(l.drop(6)), fontFamily = fam, fontSize = 14.sp, lineHeight = st.line, color = if (done) Sb.mute else Sb.ink, textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None)
+                    Row(Modifier.fillMaxWidth().tap { toggle(l, (if (done) "- [ ] " else "- [x] ") + l.drop(6)) }, Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
+                        Box(Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(if (done) acc else Color.Transparent).border(1.5.dp, acc, RoundedCornerShape(4.dp)))
+                        Text(linkify(l.drop(6)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line, color = if (done) Sb.mute else Sb.ink, textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None)
                     }
                 }
-                l.startsWith("- ") -> Row(Modifier.padding(vertical = 1.dp), Arrangement.spacedBy(8.dp)) {
-                    Text("•", fontSize = 14.sp, color = acc); Text(linkify(l.drop(2)), fontFamily = fam, fontSize = 14.sp, lineHeight = st.line)
+                l.startsWith("- ") -> Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
+                    Text("•", fontSize = 17.sp, lineHeight = st.line, color = acc, fontWeight = FontWeight.Bold)
+                    Text(linkify(l.drop(2)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
                 }
-                l.isBlank() -> Spacer(Modifier.height(8.dp))
-                else -> Text(linkify(l), fontFamily = fam, fontSize = 14.sp, lineHeight = st.line)
+                l.isBlank() -> Spacer(Modifier.height(lineDp))
+                else -> Text(linkify(l), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
             }
         }
     }
@@ -118,7 +124,22 @@ private fun Drag(start: Offset, rot: Float, onDone: (Offset) -> Unit, content: @
 
 /** One item, rendered by its layout. Content is shared across layouts, so switching never loses anything. */
 @Composable
-fun ItemPage(item: Item, all: List<Item>) = CompositionLocalProvider(LocalPage provides item.style()) { Column { PageBody(item, all); InlineImages(item) } }
+fun ItemPage(item: Item, all: List<Item>) {
+    val t = LocalSb.current; val acc = pageAccent(item.accent) ?: t.acc
+    CompositionLocalProvider(LocalPage provides item.style(), LocalSb provides t.copy(acc = acc)) {
+        Column {
+            if (item.cover != null) {
+                ItemImage(item.copy(imageUri = item.cover), Modifier.fillMaxWidth().height(150.dp), t.radius)
+                Spacer(Modifier.height(12.dp))
+            }
+            PageBody(withoutTitleLine(item), all); InlineImages(item)
+        }
+    }
+}
+
+/** Text layouts skip a first line that only repeats the title. Quote and Gallery keep their text as is. */
+private fun withoutTitleLine(item: Item): Item =
+    if (item.layout in listOf(Layout.Classic, Layout.Journal, Layout.TwoColumn, Layout.Reference, Layout.Collection)) item.copy(body = bodyWithoutTitle(item.title, item.body)) else item
 
 /** Images attached to a note appear under its text on the text-first layouts. */
 @Composable
@@ -135,10 +156,10 @@ private fun PageBody(item: Item, all: List<Item>) {
     val pos = defaults.mapIndexed { i, d -> saved.getOrNull(i) ?: d }
     val canvasSave = LocalCanvas.current
     fun moved(i: Int, o: Offset) = canvasSave(pos.mapIndexed { j, q -> if (j == i) o else q }.joinToString(";") { "${it.x},${it.y}" })
-    val t = LocalSb.current; val r = RoundedCornerShape(t.radius)
+    val t = LocalSb.current; val r = RoundedCornerShape(t.radius); val rc = RoundedCornerShape(minOf(t.radius, 14.dp))
     val tags = item.tags.joinToString().ifBlank { "—" }
     when (item.layout) {
-        Layout.Classic -> Column(verticalArrangement = Arrangement.spacedBy(gap)) { if (st.showMeta) Meta(item.collection); Title(item.title); Body(item.body) }
+        Layout.Classic -> Column(verticalArrangement = Arrangement.spacedBy(gap)) { Title(item.title); Body(item.body) }
         Layout.Journal -> Column(verticalArrangement = Arrangement.spacedBy(gap)) {
             if (st.showMeta) Meta(date(item.savedAt)); Title(item.title, 28.sp); Body(item.body)
             if (st.showMeta) Row(Modifier.padding(top = 8.dp), Arrangement.spacedBy(8.dp)) {
@@ -196,9 +217,9 @@ private fun PageBody(item: Item, all: List<Item>) {
         Layout.Blank -> Box(Modifier.fillMaxWidth().height(420.dp).clip(r).drawBehind {
             var y = 0f; while (y < size.height) { var x = 0f; while (x < size.width) { drawCircle(Color(0xFFCFCABB), 1.5f, Offset(x, y)); x += 48f }; y += 48f }
         }) {
-            Drag(pos[0], -3f, { moved(0, it) }) { Column(Modifier.width(150.dp).clip(r).background(Sb.notes[item.color % 5]).padding(12.dp)) { Title(item.title, 18.sp) } }
-            Drag(pos[1], 2f, { moved(1, it) }) { Column(Modifier.width(180.dp).clip(r).background(Sb.card).border(1.dp, Sb.line, r).padding(12.dp)) { Body(item.body) } }
-            Drag(pos[2], -4f, { moved(2, it) }) { ItemImage(item, Modifier.size(90.dp, 100.dp)) }
+            Drag(pos[0], -3f, { moved(0, it) }) { Column(Modifier.width(150.dp).clip(rc).background(Sb.notes[item.color % 5]).padding(12.dp)) { Title(item.title, 18.sp) } }
+            Drag(pos[1], 2f, { moved(1, it) }) { Column(Modifier.width(180.dp).clip(rc).background(Sb.card).border(1.dp, Sb.line, rc).padding(12.dp)) { Body(item.body) } }
+            Drag(pos[2], -4f, { moved(2, it) }) { ItemImage(item, Modifier.size(90.dp, 100.dp), 12.dp) }
         }
     }
 }

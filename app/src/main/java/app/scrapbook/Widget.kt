@@ -22,17 +22,21 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 
-/** Home-screen widget: one older note from the archive, a different one each day. */
+/** Home-screen widget: one older note from the archive, a different one each day. Same colors as the app. */
 class RediscoverWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val old = Db.get(context).dao().oldest()
         val item = if (old.isEmpty()) null else old[((System.currentTimeMillis() / 86_400_000L) % old.size).toInt()]
+        val title = item?.title ?: "Nothing saved yet"
+        val preview = item?.let { plainPreview(bodyWithoutTitle(it.title, it.body)).take(160) } ?: "Notes you save will come back here."
+        val ink = ColorProvider(Color(0xFF1C1C1C)); val mute = ColorProvider(Color(0xFF727272)); val coral = ColorProvider(Color(0xFFF46C4E))
         provideContent {
-            Column(GlanceModifier.fillMaxSize().background(Color(0xFFF8F6F0)).cornerRadius(20.dp).padding(14.dp)
+            Column(GlanceModifier.fillMaxSize().background(Color(0xFFF4F4F4)).cornerRadius(24.dp).padding(16.dp)
                 .clickable(actionStartActivity(Intent(context, MainActivity::class.java)))) {
-                Text("From your archive", style = TextStyle(color = ColorProvider(Color(0xFF686862)), fontSize = 11.sp))
-                Text(item?.title ?: "Nothing saved yet", style = TextStyle(color = ColorProvider(Color(0xFF24272A)), fontSize = 16.sp, fontWeight = FontWeight.Bold))
-                Text(plainPreview(item?.body.orEmpty()).take(110), style = TextStyle(color = ColorProvider(Color(0xFF24272A)), fontSize = 12.sp))
+                Text("scrapbook", style = TextStyle(color = coral, fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                Text("From your archive", style = TextStyle(color = mute, fontSize = 11.sp), modifier = GlanceModifier.padding(top = 2.dp))
+                Text(title, style = TextStyle(color = ink, fontSize = 17.sp, fontWeight = FontWeight.Medium), maxLines = 2, modifier = GlanceModifier.padding(top = 8.dp))
+                Text(preview, style = TextStyle(color = mute, fontSize = 13.sp), maxLines = 4, modifier = GlanceModifier.padding(top = 4.dp))
             }
         }
     }

@@ -22,6 +22,7 @@ data class Item(
     val canvas: String = "",
     val source: String = "",
     val images: String = "",
+    val accent: Int = 0, val cover: String? = null,
 )
 
 /** A user-made collection. Notes join it by name (Item.collection). "Inbox" and "All" are built in. */
