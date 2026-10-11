@@ -8,12 +8,14 @@ widget, and sharing into the app from other apps.
 
 **Easiest, no tools to install (GitHub):**
 1. Create a GitHub repository and push this folder to it (branch `main`).
-2. Open the repo's **Actions** tab, open the latest **Android CI** run, and download the
-   `scrapbook-debug-apk` artifact (a zip containing `app-debug.apk`).
-3. Copy the APK to your phone and open it. Android will ask you to allow installing from that source.
+2. Do the one-time key setup in `SIGNING.md` (about 10 minutes). This is what lets every new version
+   install over the old one without deleting the app.
+3. Open the repo's **Actions** tab, open the latest **Android CI** run, and download the
+   `scrapbook-release-apk` artifact (a zip containing `app-release.apk`).
+4. Copy the APK to your phone and open it. Android will ask you to allow installing from that source.
 
 **With Android Studio:** open this folder, let Gradle sync, plug in a phone (USB debugging on) or start an
 emulator, and press Run.
 
-The debug APK is fine for personal use. To publish or keep a stable signed build, see `SIGNING.md`.
+`scrapbook-debug-apk` is also built and signed with the same key, but use the release one day to day.
 Fonts: see `FONTS.md`. Widget: long-press your home screen, Widgets, Scrapbook.

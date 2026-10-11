@@ -187,9 +187,15 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
                 runCatching {
                     val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
                     c.connectTimeout = 4000; c.readTimeout = 4000; c.setRequestProperty("User-Agent", "Mozilla/5.0")
-                    val buf = ByteArray(65536)
-                    val n = c.inputStream.use { it.read(buf) }.coerceAtLeast(0)
-                    extractTitle(String(buf, 0, n, Charsets.UTF_8))
+                    // A single read() can return early, so fill the buffer (the <title> sits near the top of the page).
+                    val html = try {
+                        c.inputStream.use { s ->
+                            val buf = ByteArray(65536); var n = 0
+                            while (n < buf.size) { val r = s.read(buf, n, buf.size - n); if (r < 0) break; n += r }
+                            String(buf, 0, n, Charsets.UTF_8)
+                        }
+                    } finally { c.disconnect() }
+                    extractTitle(html)
                 }.getOrNull()
             }
             if (t != null) done(t)

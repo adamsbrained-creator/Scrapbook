@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
@@ -60,12 +61,18 @@ val LocalSb = compositionLocalOf { Themes[0] }
 /** Brand fonts (serif, sans). Loaded from res/font if present (see FONTS.md), otherwise system fonts. */
 val LocalFonts = compositionLocalOf<Pair<FontFamily, FontFamily>> { FontFamily.Serif to FontFamily.SansSerif }
 
+@OptIn(ExperimentalTextApi::class) // Font(variationSettings = ...) is still experimental in Compose 1.7
 @Composable
 fun rememberBrandFonts(): Pair<FontFamily, FontFamily> {
     val ctx = LocalContext.current
     return remember {
-        fun fam(name: String, fallback: FontFamily): FontFamily =
-            ctx.resources.getIdentifier(name, "font", ctx.packageName).let { if (it == 0) fallback else FontFamily(listOf(300, 400, 500, 600, 700).map { w -> Font(it, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w))) }) }
+        fun fam(name: String, fallback: FontFamily): FontFamily {
+            val id = ctx.resources.getIdentifier(name, "font", ctx.packageName)
+            if (id == 0) return fallback
+            return FontFamily(listOf(300, 400, 500, 600, 700).map { w ->
+                Font(id, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+            })
+        }
         fam("newsreader", FontFamily.Serif) to fam("outfit", fam("figtree", FontFamily.SansSerif))
     }
 }
