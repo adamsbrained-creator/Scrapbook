@@ -69,6 +69,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     val shelf = shelves.firstOrNull { it.name == name }
     val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }; var styleSheet by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }; var inboxSheet by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }; var kind by remember { mutableStateOf<Kind?>(null) }
     var kindMenu by remember { mutableStateOf(false) }; var sortMenu by remember { mutableStateOf(false) }; var more by remember { mutableStateOf(false) }
     var byTitle by rememberSaveable { mutableStateOf(false) }; var grid by rememberSaveable { mutableStateOf(true) }
@@ -91,6 +92,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                                     if (shelf != null) DropdownMenuItem(text = { Text("Edit box") }, onClick = { more = false; editing = true })
                                     if (name == "Inbox") DropdownMenuItem(text = { Text("Change color") }, onClick = { more = false; inboxSheet = true })
+                                    if (shelf != null || name == "Inbox") DropdownMenuItem(text = { Text(if (name == "Inbox") "Remove Inbox" else "Delete box") }, onClick = { more = false; deleting = true })
                                     DropdownMenuItem(text = { Text("All boxes") }, onClick = { more = false; nav.navigate("collections") })
                                 }
                             }
@@ -157,6 +159,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
         }
         if (editing && shelf != null) ShelfSheet(vm, shelf) { editing = false }
         if (inboxSheet) InboxSheet(vm) { inboxSheet = false }
+        if (deleting) DeleteBoxSheet(name, vm, { deleting = false }) { if (name == "Inbox") nav.popBackStack() }
         if (menuSheet) MenuSheet(nav, { menuSheet = false }, { styleSheet = true }) { vm.pendingShelf = null }
         if (styleSheet) AppStyleSheet(vm) { styleSheet = false }
     }

@@ -100,6 +100,11 @@ fun ItemImage(item: Item, modifier: Modifier = Modifier, radius: Dp = LocalSb.cu
     else FlatImage(item.color, modifier, radius)
 }
 
+/** Tap opens; a long press runs onHold (for example to delete a box). */
+@OptIn(ExperimentalFoundationApi::class)
+fun Modifier.tapOrHold(label: String? = null, holdLabel: String? = null, onHold: () -> Unit, onClick: () -> Unit): Modifier =
+    combinedClickable(onClickLabel = label, role = Role.Button, onLongClickLabel = holdLabel, onLongClick = onHold, onClick = onClick)
+
 /** Clickable with a Button role and an optional spoken label. */
 fun Modifier.tap(label: String? = null, onClick: () -> Unit): Modifier = clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
 

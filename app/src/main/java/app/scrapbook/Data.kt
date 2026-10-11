@@ -23,6 +23,7 @@ interface ItemDao {
     @Upsert suspend fun upsertShelf(shelf: Shelf)
     @Query("DELETE FROM collections WHERE name = :name") suspend fun removeShelf(name: String)
     @Query("UPDATE items SET collection = :newName WHERE collection = :oldName") suspend fun moveItems(oldName: String, newName: String)
+    @Query("DELETE FROM items WHERE collection = :name") suspend fun deleteItemsIn(name: String)
     @Query("SELECT * FROM items ORDER BY savedAt ASC LIMIT 20") suspend fun oldest(): List<Item>
     @Query("SELECT COUNT(*) FROM items") suspend fun count(): Int
 }

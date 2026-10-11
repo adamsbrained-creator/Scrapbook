@@ -120,7 +120,7 @@ private fun Body(text: String) {
                 NUM_LINE.containsMatchIn(l) -> {
                     val nm = NUM_LINE.find(l)!!
                     Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-                        Text(nm.groupValues[1] + ".", fontSize = 17.sp, lineHeight = st.line, color = acc, fontWeight = FontWeight.Bold)
+                        Text(nm.groupValues[1] + ".", fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
                         Text(linkify(l.drop(nm.value.length)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
                     }
                 }

@@ -66,7 +66,7 @@ private fun mdTransform(acc: Color) = VisualTransformation { text ->
             if (st != null && line.isNotEmpty()) addStyle(st, i, i + line.length)
             if (line.startsWith("- [ ] ") || line.startsWith("- [x] ")) addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + 5)
             else if (line.startsWith("- ")) addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + 1)
-            else NUM.find(line)?.let { m -> addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + m.value.length - 1) }
+            // Numbered lists keep the normal text color on purpose.
             for (m in INLINE.findAll(line)) {
                 val g = m.groupValues; val s0 = i + m.range.first; val e0 = i + m.range.last + 1
                 val mk = if (g[4].isNotEmpty()) 1 else 2
@@ -243,7 +243,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                         DropdownMenuItem(text = { Text(if (more) "Hide details" else "Details: color, box, tags") }, onClick = { menu = false; more = !more })
                         if (live != null) {
                             DropdownMenuItem(text = { Text(if (live.pinned) "Unpin" else "Pin") }, onClick = { menu = false; vm.togglePin(live) })
-                            DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; nav.navigate("layouts/${live.id}") })
+                            DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; scope.launch { flush(); nav.navigate("layouts/${live.id}") } })
                             DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; vm.delete(live); nav.popBackStack("home", false) })
                         }
                     }

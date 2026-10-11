@@ -57,8 +57,8 @@ fun SegIcon(kind: String, on: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TileBox(name: String, count: Int, tab: Color, modifier: Modifier, onClick: () -> Unit) {
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(Sb.card).tap(name, onClick)) {
+private fun TileBox(name: String, count: Int, tab: Color, modifier: Modifier, onHold: () -> Unit, onClick: () -> Unit) {
+    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(Sb.card).tapOrHold(name, "Delete box", onHold, onClick)) {
         Box(Modifier.align(Alignment.TopEnd).padding(end = 16.dp).width(32.dp).height(8.dp)
             .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(tab))
         Text("$count", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 22.dp))
@@ -75,24 +75,92 @@ private fun Meta(n: Item, hasPreview: Boolean) {
 }
 
 @Composable
+private fun RowTitle(n: Item, size: TextUnit = 19.sp, lines: Int = 1) {
+    Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = size, maxLines = lines, overflow = TextOverflow.Ellipsis)
+}
+
+/** One scrap in the list. It follows the scrap's page layout, so changing the layout changes how it looks here. */
+@Composable
 fun NoteRow(n: Item, nav: NavController) {
     val imgs = n.allImages(); val preview = plainPreview(bodyWithoutTitle(n.title, n.body))
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("edit/${n.id}") }.padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (preview.isBlank()) { Meta(n, false); Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp) }
-            else {
-                Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Meta(n, true)
-                Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
+    val shape = RoundedCornerShape(28.dp); val tint = LocalSb.current.tint
+    val open = { nav.navigate("edit/${n.id}") }
+    val card = Modifier.fillMaxWidth().clip(shape).background(Sb.card).tap("Open ${n.title}", open).padding(20.dp)
+    when (n.layout) {
+        Layout.Classic -> Row(card, verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (preview.isBlank()) { Meta(n, false); Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp) }
+                else {
+                    RowTitle(n)
+                    Meta(n, true)
+                    Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+            if (imgs.isNotEmpty()) {
+                Box(Modifier.padding(start = 12.dp).size(88.dp, 96.dp)) {
+                    if (imgs.size > 1) ItemImage(n.copy(imageUri = imgs[1]), Modifier.size(58.dp, 74.dp).align(Alignment.CenterStart).rotate(-8f), 10.dp)
+                    ItemImage(n.copy(imageUri = imgs[0]), Modifier.size(58.dp, 74.dp).align(Alignment.CenterEnd).rotate(6f)
+                        .border(2.dp, Color.White, RoundedCornerShape(10.dp)), 10.dp)
+                }
             }
         }
-        if (imgs.isNotEmpty()) {
-            Box(Modifier.padding(start = 12.dp).size(88.dp, 96.dp)) {
-                if (imgs.size > 1) ItemImage(n.copy(imageUri = imgs[1]), Modifier.size(58.dp, 74.dp).align(Alignment.CenterStart).rotate(-8f), 10.dp)
-                ItemImage(n.copy(imageUri = imgs[0]), Modifier.size(58.dp, 74.dp).align(Alignment.CenterEnd).rotate(6f)
-                    .border(2.dp, Color.White, RoundedCornerShape(10.dp)), 10.dp)
+        Layout.Journal -> Column(card, Arrangement.spacedBy(4.dp)) {
+            Meta(n, true)
+            RowTitle(n, 24.sp, 2)
+            if (preview.isNotBlank()) Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 3, modifier = Modifier.padding(top = 4.dp))
+            if (n.showMeta) Row(Modifier.padding(top = 8.dp), Arrangement.spacedBy(6.dp)) {
+                listOf(n.collection, n.kind.label).forEach { s ->
+                    Text(s, fontSize = 11.sp, maxLines = 1, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(tint).padding(horizontal = 9.dp, vertical = 4.dp))
+                }
             }
+        }
+        Layout.Gallery -> Column(card, Arrangement.spacedBy(8.dp)) {
+            ItemImage(n.copy(imageUri = imgs.firstOrNull()), Modifier.fillMaxWidth().height(150.dp), 18.dp)
+            Text(n.title, Modifier.fillMaxWidth(), fontFamily = headFont(), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                fontSize = 14.sp, textAlign = TextAlign.Center, color = Sb.mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (imgs.size > 1) Text("${imgs.size} photos", Modifier.fillMaxWidth(), fontSize = 11.sp, color = Sb.mute, textAlign = TextAlign.Center)
+        }
+        Layout.TwoColumn -> Column(card, Arrangement.spacedBy(6.dp)) {
+            RowTitle(n)
+            val w = preview.split(" ").filter { it.isNotBlank() }; val h = (w.size + 1) / 2
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(w.take(h).joinToString(" "), Modifier.weight(1f), fontSize = 13.sp, color = Sb.mute, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Text(w.drop(h).joinToString(" "), Modifier.weight(1f), fontSize = 13.sp, color = Sb.mute, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Layout.Quote -> Column(card, Arrangement.spacedBy(8.dp), Alignment.CenterHorizontally) {
+            Text("“" + plainPreview(n.body, " ").ifBlank { n.title }.take(140) + "”", fontFamily = headFont(),
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 19.sp, textAlign = TextAlign.Center, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Text(n.source.ifBlank { n.title }, fontSize = 11.sp, color = Sb.mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Layout.Reference -> Column(card, Arrangement.spacedBy(6.dp)) {
+            RowTitle(n)
+            if (preview.isNotBlank()) Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 2)
+            if (n.showMeta) Column(Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .border(1.dp, Sb.line, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp)) {
+                listOf("Box" to n.collection, "Kind" to n.kind.label, "Saved" to fmtDate(n.savedAt, true)).forEach { (k, v) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), Arrangement.SpaceBetween) {
+                        Text(k, fontSize = 11.sp, color = Sb.mute); Text(v, fontSize = 11.5.sp, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Layout.Collection -> Column(card, Arrangement.spacedBy(6.dp)) {
+            ItemImage(n.copy(imageUri = imgs.firstOrNull()), Modifier.fillMaxWidth().height(96.dp), 16.dp)
+            RowTitle(n)
+            if (preview.isNotBlank()) Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("In ${n.collection}", fontSize = 11.sp, color = Sb.mute)
+        }
+        Layout.Blank -> Box(Modifier.fillMaxWidth().height(132.dp).clip(shape).background(Sb.card).tap("Open ${n.title}", open)) {
+            Box(Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 16.dp).rotate(-3f).width(130.dp)
+                .clip(RoundedCornerShape(8.dp)).background(Sb.notes[n.color % 5]).padding(8.dp)) {
+                Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 12.dp).rotate(2f).width(150.dp)
+                .clip(RoundedCornerShape(8.dp)).background(tint).padding(8.dp)) {
+                Text(preview.ifBlank { n.kind.label }, fontSize = 12.sp, color = Sb.mute, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
+            ItemImage(n.copy(imageUri = imgs.firstOrNull()), Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 10.dp).size(54.dp, 60.dp).rotate(-4f), 8.dp)
         }
     }
 }
@@ -107,13 +175,51 @@ fun NoteTile(n: Item, nav: NavController, modifier: Modifier) {
     }
 }
 
-/** A small drawing of what is inside a note: photos, a checklist, or a page of text. */
+@Composable
+private fun PBar(w: Float, h: Int, c: Color) { Box(Modifier.fillMaxWidth(w).height(h.dp).clip(RoundedCornerShape(2.dp)).background(c)) }
+
+/** A small drawing of what is inside a note. Non-Classic layouts draw their own look; Classic shows photos, a checklist, or a page of text. */
 @Composable
 fun NotePreviewArt(n: Item) {
     val imgs = n.allImages(); val dark = Sb.dark
     val checks = n.body.lines().filter { it.startsWith("- [ ] ") || it.startsWith("- [x] ") }
     val barC = Sb.mute.copy(alpha = .45f); val lineC = Sb.mute.copy(alpha = .22f)
+    val paper = if (dark) Color(0xFF2A2A2A) else Color.White; val chipC = LocalSb.current.tint
     when {
+        n.layout == Layout.Quote -> Column(Modifier.size(130.dp, 124.dp), Arrangement.Center, Alignment.CenterHorizontally) {
+            Text("“", fontFamily = headFont(), fontSize = 44.sp, color = LocalSb.current.acc)
+            Text(plainPreview(n.body, " ").ifBlank { n.title }.take(70), fontFamily = headFont(), fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                fontSize = 13.sp, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        }
+        n.layout == Layout.Gallery -> ItemImage(n.copy(imageUri = imgs.firstOrNull()), Modifier.size(132.dp, 124.dp).border(3.dp, Color.White, RoundedCornerShape(14.dp)), 14.dp)
+        n.layout == Layout.Collection -> Column(Modifier.size(124.dp, 124.dp), Arrangement.spacedBy(6.dp)) {
+            ItemImage(n.copy(imageUri = imgs.firstOrNull()), Modifier.fillMaxWidth().height(70.dp), 12.dp)
+            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(5.dp)) {
+                repeat(3) { i -> Box(Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(8.dp)).background(Sb.notes[(n.color + i) % 5])) }
+            }
+        }
+        n.layout == Layout.Blank -> Box(Modifier.size(132.dp, 124.dp)) {
+            Box(Modifier.align(Alignment.TopStart).size(70.dp, 40.dp).rotate(-5f).clip(RoundedCornerShape(6.dp)).background(Sb.notes[n.color % 5]))
+            Box(Modifier.align(Alignment.CenterEnd).size(66.dp, 56.dp).rotate(4f).shadow(2.dp, RoundedCornerShape(6.dp)).clip(RoundedCornerShape(6.dp)).background(paper))
+            ItemImage(n.copy(imageUri = imgs.firstOrNull()), Modifier.align(Alignment.BottomStart).size(48.dp, 54.dp).rotate(-4f), 6.dp)
+        }
+        n.layout == Layout.Journal || n.layout == Layout.TwoColumn || n.layout == Layout.Reference ->
+            Column(Modifier.size(108.dp, 124.dp).shadow(3.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(paper).padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (n.layout == Layout.Journal) PBar(.35f, 3, lineC)
+                PBar(.6f, 5, barC)
+                if (n.layout == Layout.TwoColumn) {
+                    Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(5.dp)) {
+                        repeat(2) { Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) { repeat(5) { j -> PBar(if (j == 3) .6f else 1f, 3, lineC) } } }
+                    }
+                } else {
+                    repeat(2) { PBar(1f, 3, lineC) }
+                    if (n.layout == Layout.Journal) Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(4.dp)) {
+                        repeat(3) { Box(Modifier.weight(1f).height(12.dp).clip(RoundedCornerShape(3.dp)).background(chipC)) }
+                    } else Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(5.dp)).border(1.dp, lineC, RoundedCornerShape(5.dp)).padding(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)) { repeat(3) { PBar(1f, 3, lineC) } }
+                }
+            }
         imgs.isNotEmpty() -> Box(Modifier.size(120.dp, 130.dp)) {
             if (imgs.size > 1) ItemImage(n.copy(imageUri = imgs[1]), Modifier.size(84.dp, 108.dp).align(Alignment.TopEnd).rotate(7f).border(3.dp, Color.White, RoundedCornerShape(10.dp)), 10.dp)
             ItemImage(n.copy(imageUri = imgs[0]), Modifier.size(84.dp, 108.dp).align(Alignment.BottomStart).rotate(-5f).border(3.dp, Color.White, RoundedCornerShape(10.dp)), 10.dp)
@@ -219,6 +325,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     val inboxColor by vm.inboxColor.collectAsState(); val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
     val snack = remember { SnackbarHostState() }
+    val inboxHidden by vm.inboxHidden.collectAsState(); var deleting by remember { mutableStateOf<String?>(null) }
     var style by remember { mutableStateOf(false) }; var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState(); var menu by remember { mutableStateOf(false) }
     var grid by rememberSaveable { mutableStateOf(false) }; var byTitle by rememberSaveable { mutableStateOf(false) }; var asc by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(deleted) {
@@ -269,11 +376,12 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                     }
                     item {
                         data class Tile(val name: String, val count: Int, val tab: Color)
-                        val tiles = shelves.map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + Tile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size])
+                        val inboxTile = if (inboxHidden) emptyList<Tile>() else listOf(Tile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size]))
+                        val tiles = shelves.map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + inboxTile
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             tiles.chunked(4).forEach { row ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    row.forEach { tl -> TileBox(tl.name, tl.count, tl.tab, Modifier.weight(1f)) { nav.navigate("shelf/${tl.name}") } }
+                                    row.forEach { tl -> TileBox(tl.name, tl.count, tl.tab, Modifier.weight(1f), { deleting = tl.name }) { nav.navigate("shelf/${tl.name}") } }
                                     repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                                 }
                             }
@@ -308,6 +416,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
         }
         if (style) AppStyleSheet(vm) { style = false }
         if (menuSheet) MenuSheet(nav, { menuSheet = false }, { style = true }) { vm.pendingShelf = null }
+        deleting?.let { n -> DeleteBoxSheet(n, vm, { deleting = null }) }
         if (!welcomed) Welcome({ vm.dismissWelcome() }, { vm.addExamples() })
     }
 }

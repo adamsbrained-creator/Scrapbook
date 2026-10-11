@@ -54,6 +54,30 @@ fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit) {
     }
 }
 
+/**
+ * Confirm deleting a box (opened by long-pressing it, or from the box's menu). Deleting never loses scraps unless you pick
+ * the second option and tap twice. Inbox is built in: removing it hides the box, and its scraps stay in All scraps.
+ */
+@Composable
+fun DeleteBoxSheet(name: String, vm: ArchiveViewModel, onDone: () -> Unit, afterDelete: () -> Unit = {}) {
+    val all by vm.items.collectAsState()
+    val count = all.count { it.collection == name }; val inbox = name == "Inbox"
+    val scraps = if (count == 1) "1 scrap" else "$count scraps"
+    var sure by remember { mutableStateOf(false) }
+    fun finish() { onDone(); afterDelete() }
+    Sheet(if (inbox) "Remove Inbox?" else "Delete \"$name\"?", onDone, doneLabel = "Cancel") {
+        Text(if (inbox) "Inbox is where scraps land when you don't file them. Removing it hides the box. Your scraps stay in All scraps, and you can bring Inbox back from the Boxes screen."
+            else "Your scraps are not lost: they move to Inbox.", fontSize = 13.sp, color = Sb.mute)
+        Row { Chip(if (inbox) "Remove Inbox, keep scraps" else "Delete box, keep scraps") { if (inbox) vm.removeInbox(false) else vm.deleteShelf(name); finish() } }
+        if (count > 0) {
+            if (sure) Text("This permanently deletes $scraps and cannot be undone.", fontSize = 12.sp, color = Color(0xFFB3261E))
+            Row { Chip(if (sure) "Yes, delete the box and $scraps" else "Delete the box and its $scraps…") {
+                if (!sure) sure = true else { if (inbox) vm.removeInbox(true) else vm.deleteShelfAndScraps(name); finish() }
+            } }
+        }
+    }
+}
+
 /** Move a note into another collection. */
 @Composable
 fun MoveSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet("Add to box", onDone) {
@@ -99,8 +123,9 @@ fun InboxSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
 }
 
 @Composable
-private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavController, onEdit: () -> Unit) {
-    Box(modifier.heightIn(min = 176.dp).clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${s.name}") { nav.navigate("shelf/${s.name}") }) {
+private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavController, onHold: () -> Unit, onEdit: () -> Unit) {
+    Box(modifier.heightIn(min = 176.dp).clip(RoundedCornerShape(28.dp)).background(Sb.card)
+        .tapOrHold("Open ${s.name}", "Delete box", onHold) { nav.navigate("shelf/${s.name}") }) {
         Box(Modifier.align(Alignment.TopEnd).padding(end = 22.dp).width(34.dp).height(9.dp)
             .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(TAB_COLORS[s.color % TAB_COLORS.size]))
         Column(Modifier.padding(18.dp).fillMaxWidth()) {
@@ -121,6 +146,7 @@ private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavControll
 fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     var edit by remember { mutableStateOf<Shelf?>(null) }; var creating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<String?>(null) }; val inboxHidden by vm.inboxHidden.collectAsState()
     Box(Modifier.fillMaxSize()) {
         Scaffold(containerColor = t.paper) { pad ->
             LazyColumn(Modifier.fillMaxSize().padding(pad), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -140,7 +166,8 @@ fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Chip("All scraps · ${all.size}") { nav.navigate("shelf/All") }
-                        Chip("Inbox · ${all.count { it.collection == "Inbox" }}") { nav.navigate("shelf/Inbox") }
+                        if (inboxHidden) Chip("Show Inbox") { vm.setInboxHidden(false) }
+                        else Chip("Inbox · ${all.count { it.collection == "Inbox" }}") { nav.navigate("shelf/Inbox") }
                     }
                 }
                 if (shelves.isEmpty()) item {
@@ -151,7 +178,7 @@ fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
                 }
                 items(shelves.chunked(2)) { pair ->
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { s -> ShelfCard(s, all.count { it.collection == s.name }, Modifier.weight(1f), nav) { edit = s } }
+                        pair.forEach { s -> ShelfCard(s, all.count { it.collection == s.name }, Modifier.weight(1f), nav, { deleting = s.name }) { edit = s } }
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
@@ -159,5 +186,6 @@ fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
         }
         if (creating) ShelfSheet(vm, null) { creating = false }
         edit?.let { ShelfSheet(vm, it) { edit = null } }
+        deleting?.let { n -> DeleteBoxSheet(n, vm, { deleting = null }) }
     }
 }

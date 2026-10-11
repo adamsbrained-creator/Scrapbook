@@ -93,7 +93,12 @@ fun LayoutScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
             Text("Spacing", fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(top = 8.dp, bottom = 6.dp))
             Seg(listOf("Airy", "Cozy", "Compact"), item.density) { vm.save(item.copy(density = it)) }
             Spacer(Modifier.weight(1f))
-            Text("Use ${item.layout.label}", Modifier.fillMaxWidth().padding(vertical = 12.dp).clip(RoundedCornerShape(28.dp)).background(Sb.ink).tap("Done") { nav.popBackStack() }.padding(vertical = 16.dp),
+            Text("Use ${item.layout.label}", Modifier.fillMaxWidth().padding(vertical = 12.dp).clip(RoundedCornerShape(28.dp)).background(Sb.ink).tap("Done") {
+                    // The editor is a plain writing screen, so after choosing a layout from there, open the page that shows it.
+                    val fromEditor = nav.previousBackStackEntry?.destination?.route == "edit/{id}"
+                    nav.popBackStack()
+                    if (fromEditor) nav.navigate("item/${item.id}")
+                }.padding(vertical = 16.dp),
                 color = Sb.card, textAlign = TextAlign.Center, fontWeight = FontWeight.Medium, fontSize = 16.sp)
         }
     }

@@ -29,6 +29,7 @@ private val HEADER = intPreferencesKey("header")
 private val INBOX = intPreferencesKey("inbox_color")
 private val NAV = intPreferencesKey("nav_style")
 private val WELCOMED = booleanPreferencesKey("welcomed")
+private val INBOX_HIDDEN = booleanPreferencesKey("inbox_hidden")
 
 /** Something shared into the app from elsewhere, waiting to be saved. */
 data class Incoming(val text: String, val subject: String, val images: List<Uri>)
@@ -58,6 +59,9 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Color of the Inbox box: -1 is gray, otherwise an index into the box colors. */
     val inboxColor: StateFlow<Int> = ds.data.map { it[INBOX] ?: -1 }.stateIn(viewModelScope, SharingStarted.Eagerly, -1)
     fun setInboxColor(i: Int) = edit { it[INBOX] = i }
+    /** Inbox is built in, so "deleting" it hides its tile. Its scraps stay in All scraps, and the Boxes screen can bring it back. */
+    val inboxHidden: StateFlow<Boolean> = ds.data.map { it[INBOX_HIDDEN] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun setInboxHidden(b: Boolean) = edit { it[INBOX_HIDDEN] = b }
     /** Add button style: 0 is the "New scrap" pill, 1 is a bottom bar with a menu button and a round add button. */
     val navStyle: StateFlow<Int> = ds.data.map { it[NAV] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     fun setNav(i: Int) = edit { it[NAV] = i }
@@ -80,7 +84,19 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
             dao.upsertShelf(s)
         }
     }
-    fun deleteShelf(name: String) { viewModelScope.launch { dao.moveItems(name, "Inbox"); dao.removeShelf(name) } }
+    /** Deletes the box and keeps its scraps: they move to Inbox (which reappears if it was hidden). */
+    fun deleteShelf(name: String) {
+        val hadScraps = items.value.any { it.collection == name }
+        viewModelScope.launch { dao.moveItems(name, "Inbox"); dao.removeShelf(name) }
+        if (hadScraps && inboxHidden.value) setInboxHidden(false)
+    }
+    /** Deletes the box and every scrap in it. Cannot be undone. */
+    fun deleteShelfAndScraps(name: String) { viewModelScope.launch { dao.deleteItemsIn(name); dao.removeShelf(name) } }
+    /** Removes the Inbox box. With deleteScraps, the scraps in it are deleted too (cannot be undone). */
+    fun removeInbox(deleteScraps: Boolean) {
+        viewModelScope.launch { if (deleteScraps) dao.deleteItemsIn("Inbox") }
+        setInboxHidden(true)
+    }
 
     /** Copies a picked photo into app storage so it stays available after the picker's temporary access ends. */
     fun importImage(uri: Uri, done: (String) -> Unit) {
