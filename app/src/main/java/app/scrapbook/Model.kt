@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 
 enum class Layout(val label: String) {
     Classic("Classic"), Journal("Journal"), Gallery("Gallery"), TwoColumn("Two Column"),
-    Quote("Quote"), Reference("Reference"), Collection("Collection"), Blank("Blank Canvas")
+    Quote("Quote"), Reference("Reference"), Collection("Box"), Blank("Blank Canvas")
 }
 
 enum class Kind { Note, Image, Quote, Link, Voice }
@@ -33,3 +33,6 @@ fun itemsLabel(n: Int) = if (n == 1) "1 item" else "$n items"
 
 /** Main image first, then any extra images added to the note. */
 fun Item.allImages(): List<String> = listOfNotNull(imageUri) + images.split("\n").filter { it.isNotBlank() }
+
+/** What a type is called on screen: a plain note is a "Scrap". */
+val Kind.label: String get() = if (this == Kind.Note) "Scrap" else name

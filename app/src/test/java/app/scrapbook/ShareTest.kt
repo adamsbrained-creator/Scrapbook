@@ -14,6 +14,8 @@ class ShareTest {
     @Test fun titleLineIsDropped() = assertEquals("World", bodyWithoutTitle("Hello", "Hello\n\nWorld"))
     @Test fun listItemsAreNeverDropped() = assertEquals("- Hello", bodyWithoutTitle("Hello", "- Hello"))
     @Test fun differentTitleKeepsBody() = assertEquals("Hello", bodyWithoutTitle("Hi", "Hello"))
+    @Test fun inlineMarksAreStripped() = assertEquals("Bold and it x m", plainPreview("**Bold** and *it* ~~x~~ ==m=="))
+    @Test fun numberedItemsLoseTheirNumber() = assertEquals("First", plainPreview("1. First"))
     @Test fun kinds() {
         assertEquals(Kind.Link, classifyShare("https://a.b/c", false))
         assertEquals(Kind.Quote, classifyShare("“Hello”", false))

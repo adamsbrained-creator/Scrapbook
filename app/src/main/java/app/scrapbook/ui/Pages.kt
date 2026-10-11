@@ -31,6 +31,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -59,17 +60,30 @@ private fun date(ms: Long) = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault(
 @Composable private fun Meta(text: String) = Text(text, fontSize = 10.5.sp, color = Sb.mute)
 @Composable private fun Title(text: String, size: TextUnit = 26.sp, align: TextAlign = TextAlign.Start) =
     Text(text, fontFamily = LocalPage.current.family ?: headFont(), fontWeight = FontWeight.SemiBold, fontSize = size, lineHeight = size * 1.15f, textAlign = align, modifier = Modifier.semantics { heading() })
-/** Web links in a text become tappable and open in the browser. */
+private val NUM_LINE = Regex("^(\\d+)\\. ")
+private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|https?://[^\\s]+")
+
+/** Inline formatting (bold, italic, strike, highlight) and tappable web links. */
 @Composable
 private fun linkify(text: String): AnnotatedString {
     val acc = LocalSb.current.acc
     return buildAnnotatedString {
         var i = 0
-        findUrls(text).forEach { r ->
-            val url = text.substring(r.first, r.last + 1)
-            append(text.substring(i, r.first))
-            withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(url) }
-            i = r.last + 1
+        for (m in RICH.findAll(text)) {
+            append(text.substring(i, m.range.first))
+            val g = m.groupValues
+            when {
+                g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(g[1]) }
+                g[2].isNotEmpty() -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(g[2]) }
+                g[3].isNotEmpty() -> withStyle(SpanStyle(background = acc.copy(alpha = .3f))) { append(g[3]) }
+                g[4].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(g[4]) }
+                else -> {
+                    val raw = m.value; val url = raw.trimEnd('.', ',', ';', ':', '!', '?', ')', '"', '”', '\'')
+                    withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(url) }
+                    append(raw.substring(url.length))
+                }
+            }
+            i = m.range.last + 1
         }
         append(text.substring(i))
     }
@@ -101,6 +115,13 @@ private fun Body(text: String) {
                     Row(Modifier.fillMaxWidth().tap { toggle(l, (if (done) "- [ ] " else "- [x] ") + l.drop(6)) }, Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
                         Box(Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(if (done) acc else Color.Transparent).border(1.5.dp, acc, RoundedCornerShape(4.dp)))
                         Text(linkify(l.drop(6)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line, color = if (done) Sb.mute else Sb.ink, textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None)
+                    }
+                }
+                NUM_LINE.containsMatchIn(l) -> {
+                    val nm = NUM_LINE.find(l)!!
+                    Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                        Text(nm.groupValues[1] + ".", fontSize = 17.sp, lineHeight = st.line, color = acc, fontWeight = FontWeight.Bold)
+                        Text(linkify(l.drop(nm.value.length)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
                     }
                 }
                 l.startsWith("- ") -> Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
@@ -245,20 +266,20 @@ fun ItemScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                     Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
                     Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
                         Text(item.collection, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text("${item.kind.name} · ${date(item.savedAt)}", fontSize = 11.sp, color = Sb.mute, maxLines = 1)
+                        Text("${item.kind.label} · ${date(item.savedAt)}", fontSize = 11.sp, color = Sb.mute, maxLines = 1)
                     }
-                    Box(Modifier.size(44.dp).tap("Edit") { nav.navigate("edit/${item.id}") }, Alignment.Center) { Ic("edit", 24.dp, t.acc) }
+                    Box(Modifier.size(44.dp).tap("Edit") { if (nav.previousBackStackEntry?.destination?.route == "edit/{id}") nav.popBackStack() else nav.navigate("edit/${item.id}") }, Alignment.Center) { Ic("edit", 24.dp, t.acc) }
                     Box(Modifier.size(44.dp).tap("Share") {
                         ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, item.title); putExtra(Intent.EXTRA_TEXT, item.title + "\n\n" + item.body)
-                        }, "Share note"))
+                        }, "Share scrap"))
                     }, Alignment.Center) { Ic("share", 24.dp, Sb.ink) }
                     Box {
                         Box(Modifier.size(44.dp).tap("More options") { menu = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text(if (item.pinned) "Unpin" else "Pin") }, onClick = { menu = false; vm.togglePin(item) })
-                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; vm.duplicate(item) { nav.navigate("item/$it") } })
-                            DropdownMenuItem(text = { Text("Add to collection") }, onClick = { menu = false; panel = "move" })
+                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; vm.duplicate(item) { nav.navigate("edit/$it") } })
+                            DropdownMenuItem(text = { Text("Add to box") }, onClick = { menu = false; panel = "move" })
                             DropdownMenuItem(text = { Text("Tags") }, onClick = { menu = false; panel = "tags" })
                             DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; nav.navigate("layouts/${item.id}") })
                             DropdownMenuItem(text = { Text("Page style") }, onClick = { menu = false; sheet = true })

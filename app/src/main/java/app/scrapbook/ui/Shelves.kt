@@ -40,36 +40,29 @@ fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit) {
     val clean = name.trim()
     val clash = all.any { it.name.equals(clean, true) && it.name != existing?.name } || clean.equals("Inbox", true) || clean.equals("All", true)
     val ok = clean.isNotEmpty() && !clash
-    Sheet(if (existing == null) "New collection" else "Edit collection", onDone, doneLabel = "Close") {
+    Sheet(if (existing == null) "New box" else "Edit box", onDone, doneLabel = if (existing == null) "Create box" else "Save", enabled = ok,
+        primary = { if (ok) { vm.saveShelf(Shelf(clean, desc.trim(), color, cover), existing?.name); onDone() } }) {
         InputBox { Field(name, { name = it.filterNot { c -> c in "/?#{}" } }, "Name", 18.sp, headFont(), FontWeight.Medium) }
         InputBox { Field(desc, { desc = it }, "Description (optional)", 15.sp, headFont()) }
         if (clash) Text("That name is already used.", fontSize = 11.sp, color = Color(0xFFB3261E))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Sb.notes.forEachIndexed { i, c ->
-                Box(Modifier.size(32.dp).clip(CircleShape).background(c).border(if (i == color % 5) 2.dp else 1.dp, if (i == color % 5) Sb.ink else Sb.line, CircleShape)
-                    .tap(COLOR_NAMES[i]) { color = i })
-            }
-        }
+        BoxColorDots(color) { color = it }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Chip(if (cover == null) "Choose cover" else "Change cover") { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
             if (cover != null) Chip("Remove cover") { cover = null }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Chip("Save", ok) { if (ok) { vm.saveShelf(Shelf(clean, desc.trim(), color, cover), existing?.name); onDone() } }
-            if (existing != null) Chip("Delete (notes move to Inbox)") { vm.deleteShelf(existing.name); onDone() }
-        }
+        if (existing != null) Row { Chip("Delete box (scraps move to Inbox)") { vm.deleteShelf(existing.name); onDone() } }
     }
 }
 
 /** Move a note into another collection. */
 @Composable
-fun MoveSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet("Add to collection", onDone) {
+fun MoveSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet("Add to box", onDone) {
     val shelves by vm.shelves.collectAsState()
     Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(5.dp)) {
         Chip("Inbox", item.collection == "Inbox") { vm.save(item.copy(collection = "Inbox")); onDone() }
         shelves.forEach { s -> Chip(s.name, item.collection == s.name) { vm.save(item.copy(collection = s.name)); onDone() } }
     }
-    if (shelves.isEmpty()) Text("No collections yet. Create one from the Collections screen.", fontSize = 12.sp, color = Sb.mute)
+    if (shelves.isEmpty()) Text("No boxes yet. Create one from the Boxes screen.", fontSize = 12.sp, color = Sb.mute)
 }
 
 /** Edit a note's tags. */
@@ -82,6 +75,29 @@ fun TagSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) {
     }
 }
 
+/** The box colors as tappable dots. With includeGray the first dot is gray (-1), used for Inbox. */
+@Composable
+fun BoxColorDots(selected: Int, includeGray: Boolean = false, onPick: (Int) -> Unit) {
+    val ids = (if (includeGray) listOf(-1) else emptyList()) + TAB_COLORS.indices.toList()
+    Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(10.dp)) {
+        ids.forEach { i ->
+            val c = if (i < 0) TAB_GRAY else TAB_COLORS[i]; val on = i == selected
+            Box(Modifier.size(32.dp).clip(CircleShape).background(c).border(if (on) 3.dp else 1.dp, if (on) Sb.ink else Sb.line, CircleShape)
+                .tap(if (i < 0) "Gray" else TAB_NAMES[i]) { onPick(i) })
+        }
+    }
+}
+
+/** Pick a color for the Inbox box. */
+@Composable
+fun InboxSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
+    val sel by vm.inboxColor.collectAsState()
+    Sheet("Inbox color", onDone) {
+        Text("Shown on the Inbox tile.", fontSize = 13.sp, color = Sb.mute)
+        BoxColorDots(sel, includeGray = true) { vm.setInboxColor(it) }
+    }
+}
+
 @Composable
 private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavController, onEdit: () -> Unit) {
     Box(modifier.heightIn(min = 176.dp).clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${s.name}") { nav.navigate("shelf/${s.name}") }) {
@@ -89,7 +105,7 @@ private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavControll
             .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(TAB_COLORS[s.color % TAB_COLORS.size]))
         Column(Modifier.padding(18.dp).fillMaxWidth()) {
             Text(s.name, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
-            Text(if (count == 1) "1 note" else "$count notes", fontSize = 13.sp, color = Sb.mute)
+            Text(if (count == 1) "1 scrap" else "$count scraps", fontSize = 13.sp, color = Sb.mute)
             if (s.description.isNotBlank()) Text(s.description, fontSize = 12.sp, color = Sb.mute, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Bottom) {
@@ -112,25 +128,25 @@ fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
                         Text("scrapbook", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 22.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                        Box(Modifier.size(48.dp).tap("New collection") { creating = true }, Alignment.Center) { Ic("plus", 26.dp, Sb.ink) }
+                        Box(Modifier.size(48.dp).tap("New box") { creating = true }, Alignment.Center) { Ic("plus", 26.dp, Sb.ink) }
                     }
                 }
                 item {
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text("Collections", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 36.sp)
+                        Text("Boxes", fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 36.sp)
                         Text("  ${shelves.size}", fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 7.dp))
                     }
                 }
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Chip("All notes · ${all.size}") { nav.navigate("shelf/All") }
+                        Chip("All scraps · ${all.size}") { nav.navigate("shelf/All") }
                         Chip("Inbox · ${all.count { it.collection == "Inbox" }}") { nav.navigate("shelf/Inbox") }
                     }
                 }
                 if (shelves.isEmpty()) item {
                     Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("No collections yet. Make one for books, trips or ideas, then file notes into it.", fontSize = 15.sp, color = Sb.mute)
-                        Chip("＋ New collection", true) { creating = true }
+                        Text("No boxes yet. Make one for books, trips or ideas, then file scraps into it.", fontSize = 15.sp, color = Sb.mute)
+                        Chip("＋ New box", true) { creating = true }
                     }
                 }
                 items(shelves.chunked(2)) { pair ->

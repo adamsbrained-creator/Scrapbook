@@ -6,6 +6,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.draw.alpha
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -26,7 +34,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-val TAB_COLORS = listOf(Color(0xFF3DD9D6), Color(0xFFFF5A44), Color(0xFFFFC107), Color(0xFF00A97F), Color(0xFF8E7CF0))
+val TAB_COLORS = listOf(Color(0xFF3DD9D6), Color(0xFFFF5A44), Color(0xFFFFC107), Color(0xFF00A97F), Color(0xFF8E7CF0), Color(0xFF3B82F6), Color(0xFFFF6FAE), Color(0xFFFF8A3D))
+val TAB_NAMES = listOf("Teal", "Red", "Amber", "Green", "Violet", "Blue", "Pink", "Orange")
 val TAB_GRAY = Color(0xFFB4B4B4)
 
 private fun fmtDate(ms: Long, long: Boolean): String {
@@ -68,7 +77,7 @@ private fun Meta(n: Item, hasPreview: Boolean) {
 @Composable
 fun NoteRow(n: Item, nav: NavController) {
     val imgs = n.allImages(); val preview = plainPreview(bodyWithoutTitle(n.title, n.body))
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(20.dp),
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("edit/${n.id}") }.padding(20.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (preview.isBlank()) { Meta(n, false); Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp) }
@@ -90,7 +99,7 @@ fun NoteRow(n: Item, nav: NavController) {
 
 @Composable
 fun NoteTile(n: Item, nav: NavController, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(16.dp),
+    Column(modifier.clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("edit/${n.id}") }.padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Meta(n, false)
@@ -134,9 +143,17 @@ fun NotePreviewArt(n: Item) {
     }
 }
 
+/** Lets the content be flicked left or right to dismiss it. */
 @Composable
-private fun Wordmark(modifier: Modifier, center: Boolean = false) {
-    Text("scrapbook", modifier, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 24.sp, textAlign = if (center) TextAlign.Center else TextAlign.Start)
+private fun SwipeAway(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    var x by remember { mutableFloatStateOf(0f) }
+    Box(Modifier.offset { IntOffset(x.roundToInt(), 0) }.alpha((1f - abs(x) / 900f).coerceIn(0.2f, 1f))
+        .pointerInput(Unit) { detectHorizontalDragGestures(onDragEnd = { if (abs(x) > 220f) onDismiss() else x = 0f }) { c, d -> c.consume(); x += d } }) { content() }
+}
+
+@Composable
+private fun Wordmark(modifier: Modifier, center: Boolean = false, size: TextUnit = 30.sp) {
+    Text("scrapbook", modifier, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = size, letterSpacing = (-0.03).em, textAlign = if (center) TextAlign.Center else TextAlign.Start)
 }
 
 /** A round white button, used by the "Round" header. */
@@ -149,8 +166,50 @@ private fun RoundTop(kind: String, desc: String, onClick: () -> Unit) {
 private fun MoreMenu(open: Boolean, onDismiss: () -> Unit, onRediscover: () -> Unit, onCollections: () -> Unit, onStyle: () -> Unit) {
     DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
         DropdownMenuItem(text = { Text("Rediscover") }, onClick = onRediscover)
-        DropdownMenuItem(text = { Text("Collections") }, onClick = onCollections)
+        DropdownMenuItem(text = { Text("Boxes") }, onClick = onCollections)
         DropdownMenuItem(text = { Text("App style and backup") }, onClick = onStyle)
+    }
+}
+
+/** A pill row in the menu sheet. */
+@Composable
+private fun MenuRow(label: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .5f)).tap(label, onClick).padding(horizontal = 20.dp),
+        Arrangement.SpaceBetween, Alignment.CenterVertically) {
+        Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium); Ic("chevron", 18.dp, Sb.mute)
+    }
+}
+
+/** The menu: the places in the app, plus a big New scrap button. Opened from the menu button in the header or the bottom bar. */
+@Composable
+fun MenuSheet(nav: NavController, onClose: () -> Unit, onStyle: () -> Unit, onNew: () -> Unit) {
+    fun go(route: String) { onClose(); nav.navigate(route) }
+    Sheet("scrapbook", onClose, doneLabel = "New scrap", primary = { onClose(); onNew(); nav.navigate("edit/0") }) {
+        MenuRow("All scraps") { go("shelf/All") }
+        MenuRow("Pinned") { go("shelf/Pinned") }
+        MenuRow("Recently edited") { go("shelf/Recent") }
+        MenuRow("Boxes") { go("collections") }
+        MenuRow("Rediscover") { go("rediscover") }
+        MenuRow("Search") { go("search") }
+        MenuRow("App style and backup") { onClose(); onStyle() }
+    }
+}
+
+/** The "New scrap" pill, one add button per page. */
+@Composable
+fun NewScrapPill(modifier: Modifier, onClick: () -> Unit) {
+    Row(modifier.padding(20.dp).shadow(10.dp, RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp)).background(Sb.ink)
+        .tap("New scrap", onClick).padding(horizontal = 24.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Ic("edit", 24.dp, Sb.card); Text("New scrap", color = Sb.card, fontWeight = FontWeight.Medium, fontSize = 17.sp)
+    }
+}
+
+/** Bottom bar option: a round menu button and a round add button. */
+@Composable
+fun BottomNav(modifier: Modifier, onMenu: () -> Unit, onAdd: () -> Unit) {
+    Row(modifier.padding(end = 16.dp, bottom = 18.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
+        Box(Modifier.size(58.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(Sb.card).tap("Menu", onMenu), Alignment.Center) { Ic("menu", 26.dp, Sb.ink) }
+        Box(Modifier.size(58.dp).shadow(8.dp, CircleShape).clip(CircleShape).background(Sb.ink).tap("New scrap", onAdd), Alignment.Center) { Ic("plus", 28.dp, Sb.card) }
     }
 }
 
@@ -158,12 +217,12 @@ private fun MoreMenu(open: Boolean, onDismiss: () -> Unit, onRediscover: () -> U
 @Composable
 fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
-    val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
+    val inboxColor by vm.inboxColor.collectAsState(); val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
     val snack = remember { SnackbarHostState() }
-    var style by remember { mutableStateOf(false) }; var menu by remember { mutableStateOf(false) }
+    var style by remember { mutableStateOf(false) }; var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState(); var menu by remember { mutableStateOf(false) }
     var grid by rememberSaveable { mutableStateOf(false) }; var byTitle by rememberSaveable { mutableStateOf(false) }; var asc by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(deleted) {
-        if (deleted != null) { val r = snack.showSnackbar("Note deleted", "Undo", duration = SnackbarDuration.Long); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
+        if (deleted != null) { val r = snack.showSnackbar("Scrap deleted", "Undo", duration = SnackbarDuration.Long); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
     }
     val sorted = remember(all, byTitle, asc) {
         val base = if (byTitle) all.sortedBy { it.title.lowercase() } else all.sortedBy { it.savedAt }
@@ -172,7 +231,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val inbox = all.count { it.collection == "Inbox" }
 
     Box(Modifier.fillMaxSize()) {
-        Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) { d -> Snackbar(d, shape = RoundedCornerShape(20.dp), containerColor = Sb.ink, contentColor = Sb.card, actionColor = t.acc) } }) { pad ->
+        Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) { d -> SwipeAway({ d.dismiss() }) { Snackbar(d, shape = RoundedCornerShape(20.dp), containerColor = Sb.ink, contentColor = Sb.card, actionColor = t.acc) } } }) { pad ->
             Box(Modifier.fillMaxSize().padding(pad)) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
@@ -181,13 +240,13 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                         }
                         when (header) {
                             0 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                TopBtn("menu", "Settings") { style = true }
+                                TopBtn("menu", "Menu") { menuSheet = true }
                                 Wordmark(Modifier.weight(1f).padding(start = 8.dp))
                                 TopBtn("search", "Search") { nav.navigate("search") }
                                 Box { TopBtn("more", "More") { menu = true }; moreMenu() }
                             }
                             1 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Row(Modifier.weight(1f)) { TopBtn("menu", "Settings") { style = true } }
+                                Row(Modifier.weight(1f)) { TopBtn("menu", "Menu") { menuSheet = true } }
                                 Wordmark(Modifier)
                                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                                     TopBtn("search", "Search") { nav.navigate("search") }
@@ -195,22 +254,22 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                                 }
                             }
                             else -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                RoundTop("menu", "Menu") { menuSheet = true }
+                                Wordmark(Modifier.weight(1f), center = true, size = 34.sp)
                                 RoundTop("search", "Search") { nav.navigate("search") }
-                                Wordmark(Modifier.weight(1f), center = true)
-                                Box { RoundTop("more", "More") { menu = true }; moreMenu() }
                             }
                         }
                     }
                     item {
                         Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.tap("Collections") { nav.navigate("collections") }) { Ic("folder", 28.dp, Sb.mute) }
+                            Box(Modifier.tap("Boxes") { nav.navigate("collections") }) { Ic("folder", 28.dp, Sb.mute) }
                             Ic("chevron", 24.dp, Sb.mute)
-                            Text("All notes", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                            Text("All scraps", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                         }
                     }
                     item {
                         data class Tile(val name: String, val count: Int, val tab: Color)
-                        val tiles = shelves.map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + Tile("Inbox", inbox, TAB_GRAY)
+                        val tiles = shelves.map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + Tile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size])
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             tiles.chunked(4).forEach { row ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -218,7 +277,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                                     repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                                 }
                             }
-                            if (shelves.isEmpty()) Text("＋ Create your first collection", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("Create a collection") { nav.navigate("collections") })
+                            if (shelves.isEmpty()) Text("＋ Create your first box", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("Create a box") { nav.navigate("collections") })
                         }
                     }
                     item {
@@ -234,7 +293,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                             }
                         }
                     }
-                    if (sorted.isEmpty()) item { Text("No notes yet. Tap New note to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
+                    if (sorted.isEmpty()) item { Text("No scraps yet. Tap New scrap to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
                     else if (grid) items(sorted.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             pair.forEach { NoteTile(it, nav, Modifier.weight(1f)) }
@@ -242,14 +301,13 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                         }
                     } else items(sorted, key = { it.id }) { NoteRow(it, nav) }
                 }
-                Row(Modifier.align(Alignment.BottomEnd).padding(20.dp).shadow(10.dp, RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp)).background(Sb.ink)
-                    .tap("New note") { vm.pendingShelf = null; nav.navigate("edit/0") }.padding(horizontal = 24.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Ic("edit", 24.dp, Sb.card); Text("New note", color = Sb.card, fontWeight = FontWeight.Medium, fontSize = 17.sp)
-                }
+                val addScrap = { vm.pendingShelf = null; nav.navigate("edit/0") }
+                if (navStyle == 1) BottomNav(Modifier.align(Alignment.BottomEnd), { menuSheet = true }, addScrap)
+                else NewScrapPill(Modifier.align(Alignment.BottomEnd), addScrap)
             }
         }
         if (style) AppStyleSheet(vm) { style = false }
+        if (menuSheet) MenuSheet(nav, { menuSheet = false }, { style = true }) { vm.pendingShelf = null }
         if (!welcomed) Welcome({ vm.dismissWelcome() }, { vm.addExamples() })
     }
 }

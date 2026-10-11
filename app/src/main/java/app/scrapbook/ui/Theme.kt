@@ -10,6 +10,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -63,7 +65,7 @@ fun rememberBrandFonts(): Pair<FontFamily, FontFamily> {
     val ctx = LocalContext.current
     return remember {
         fun fam(name: String, fallback: FontFamily): FontFamily =
-            ctx.resources.getIdentifier(name, "font", ctx.packageName).let { if (it == 0) fallback else FontFamily(Font(it)) }
+            ctx.resources.getIdentifier(name, "font", ctx.packageName).let { if (it == 0) fallback else FontFamily(listOf(300, 400, 500, 600, 700).map { w -> Font(it, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w))) }) }
         fam("newsreader", FontFamily.Serif) to fam("outfit", fam("figtree", FontFamily.SansSerif))
     }
 }

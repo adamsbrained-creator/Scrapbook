@@ -55,7 +55,7 @@ fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp)) {
-                Chip(kind.name + if (src.images.size > 1) " · ${src.images.size} images" else "", true)
+                Chip(kind.label + if (src.images.size > 1) " · ${src.images.size} images" else "", true)
                 Spacer(Modifier.height(10.dp))
                 Field(title, { title = it }, "Title", 26.sp, headFont(), FontWeight.Medium)
                 if (img != null) {
@@ -63,10 +63,10 @@ fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
                     ItemImage(Item(title = "", body = "", kind = kind, collection = shelf, imageUri = img), Modifier.fillMaxWidth().height(180.dp), 20.dp)
                 }
                 Spacer(Modifier.height(12.dp))
-                Field(body, { body = it }, "Add a note…", 17.sp, headFont())
+                Field(body, { body = it }, "Write something…", 17.sp, headFont())
             }
             Column(Modifier.fillMaxWidth().background(Sb.card).padding(16.dp)) {
-                Text("Collection", fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 8.dp))
+                Text("Box", fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 8.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(6.dp)) {
                     Chip("Inbox", shelf == "Inbox") { shelf = "Inbox" }
                     vm.shelves.value.forEach { Chip(it.name, shelf == it.name) { shelf = it.name } }

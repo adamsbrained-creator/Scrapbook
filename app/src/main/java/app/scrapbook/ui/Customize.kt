@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,7 +51,8 @@ private fun Swatch(c: Color, on: Boolean, name: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun Sheet(title: String, onDone: () -> Unit, doneLabel: String = "Done", content: @Composable ColumnScope.() -> Unit) {
+fun Sheet(title: String, onDone: () -> Unit, doneLabel: String = "Done", primary: (() -> Unit)? = null, enabled: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
+    BackHandler { onDone() }
     Box(Modifier.fillMaxSize().background(Color(0x66000000)).tap(onClick = onDone)) {
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = 680.dp)
             .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Sb.card)
@@ -58,7 +60,8 @@ fun Sheet(title: String, onDone: () -> Unit, doneLabel: String = "Done", content
             Box(Modifier.align(Alignment.CenterHorizontally).width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Sb.line))
             Text(title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 22.sp, modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
-            Text(doneLabel, Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(28.dp)).background(Sb.ink).tap(doneLabel, onDone).padding(vertical = 16.dp),
+            Text(doneLabel, Modifier.fillMaxWidth().padding(top = 14.dp).clip(RoundedCornerShape(28.dp)).background(Sb.ink.copy(alpha = if (enabled) 1f else .35f))
+                .tap(doneLabel) { if (enabled) (primary ?: onDone)() }.padding(vertical = 16.dp),
                 color = Sb.card, textAlign = TextAlign.Center, fontWeight = FontWeight.Medium, fontSize = 16.sp)
         }
     }
@@ -95,12 +98,12 @@ fun CustomizeSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet
 /** App-wide style: accent, heading font, corner radius. Persisted with DataStore. */
 @Composable
 fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
-    val t = LocalSb.current; val mode by vm.darkMode.collectAsState(); val header by vm.headerStyle.collectAsState(); val ctx = LocalContext.current; val scope = rememberCoroutineScope(); var msg by remember { mutableStateOf("") }
+    val t = LocalSb.current; val mode by vm.darkMode.collectAsState(); val header by vm.headerStyle.collectAsState(); val navMode by vm.navStyle.collectAsState(); val ctx = LocalContext.current; val scope = rememberCoroutineScope(); var msg by remember { mutableStateOf("") }
     val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) vm.restoreBackup(u) { n -> msg = if (n < 0) "Couldn't read that file." else "Restored $n new items." }
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { us ->
-        if (us.isNotEmpty()) vm.importTexts(us) { n -> msg = "Imported $n notes." }
+        if (us.isNotEmpty()) vm.importTexts(us) { n -> msg = "Imported $n scraps." }
     }
     Sheet("App style", onDone) {
         Lb("Accent")
@@ -109,6 +112,7 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
         Lb("Corners"); Seg(listOf("Sharp", "Soft", "Round"), when (t.radius.value.toInt()) { 4 -> 0; 24 -> 2; else -> 1 }) { vm.setRadius(listOf(4, 14, 24)[it]) }
         Lb("Appearance"); Seg(listOf("System", "Light", "Dark"), mode) { vm.setDark(it) }
         Lb("Main page header"); Seg(listOf("Left", "Center", "Round"), header) { vm.setHeader(it) }
+        Lb("Add button"); Seg(listOf("Pill", "Bottom bar"), navMode) { vm.setNav(it) }
         Lb("Backup")
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Chip("Back up archive") {
@@ -119,7 +123,7 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
                 }
             }
             Chip("Restore") { restore.launch(arrayOf("application/zip", "application/octet-stream")) }
-            Chip("Import notes") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
+            Chip("Import scraps") { importer.launch(arrayOf("text/*", "application/octet-stream")) }
         }
         if (msg.isNotEmpty()) Text(msg, fontSize = 11.sp, color = Sb.mute)
     }
@@ -128,10 +132,10 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
 /** Shown once on first launch. */
 @Composable
 fun Welcome(onDone: () -> Unit, onExamples: () -> Unit) = Sheet("Welcome to Scrapbook", onDone) {
-    listOf("Tap + to start a note. The toolbar adds headings, lists, quotes and checklists; it saves as you type.",
+    listOf("Tap New scrap to start writing. The toolbar adds formatting, lists, quotes and checklists; it saves as you type.",
         "Every page can change layout and style without losing a word.",
         "Tap the menu (three lines) to restyle the app, or back it up.").forEach {
         Text(it, fontSize = 15.sp, lineHeight = 22.sp)
     }
-    Chip("Add a few example notes") { onExamples(); onDone() }
+    Chip("Add a few example scraps") { onExamples(); onDone() }
 }

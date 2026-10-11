@@ -28,7 +28,7 @@ class RediscoverWidget : GlanceAppWidget() {
         val old = Db.get(context).dao().oldest()
         val item = if (old.isEmpty()) null else old[((System.currentTimeMillis() / 86_400_000L) % old.size).toInt()]
         val title = item?.title ?: "Nothing saved yet"
-        val preview = item?.let { plainPreview(bodyWithoutTitle(it.title, it.body)).take(160) } ?: "Notes you save will come back here."
+        val preview = item?.let { plainPreview(bodyWithoutTitle(it.title, it.body)).take(160) } ?: "Scraps you save will come back here."
         val ink = ColorProvider(Color(0xFF1C1C1C)); val mute = ColorProvider(Color(0xFF727272)); val coral = ColorProvider(Color(0xFFF46C4E))
         provideContent {
             Column(GlanceModifier.fillMaxSize().background(Color(0xFFF4F4F4)).cornerRadius(24.dp).padding(16.dp)

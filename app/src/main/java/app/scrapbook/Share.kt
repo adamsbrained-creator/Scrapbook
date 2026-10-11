@@ -34,10 +34,14 @@ fun extractTitle(html: String): String? =
         ?.replace("&amp;", "&")?.replace("&quot;", "\"")?.replace("&#39;", "'")?.replace(Regex("\\s+"), " ")?.trim()
         ?.takeIf { it.isNotEmpty() }?.take(120)
 
-/** Plain-text preview of a formatted note: drops heading/quote/list markers and dividers. */
+/** Plain-text preview of a formatted scrap: drops list, heading and quote markers, inline formatting marks and dividers. */
 fun plainPreview(text: String, sep: String = " · "): String =
-    text.lines().map { l -> l.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- )"), "") }
+    text.lines().map { l -> stripInline(l.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- |\\d+\\. )"), "")) }
         .filter { it.isNotBlank() && it != "---" }.joinToString(sep)
+
+/** Removes **bold**, *italic*, ~~strike~~ and ==highlight== marks, keeping the text. */
+fun stripInline(s: String): String = s.replace(Regex("\\*\\*(.+?)\\*\\*"), "\$1").replace(Regex("~~(.+?)~~"), "\$1")
+    .replace(Regex("==(.+?)=="), "\$1").replace(Regex("\\*(.+?)\\*"), "\$1")
 
 /**
  * A note without a typed title gets its first line as title. This drops that first line from the body
@@ -45,6 +49,6 @@ fun plainPreview(text: String, sep: String = " · "): String =
  */
 fun bodyWithoutTitle(title: String, body: String): String {
     val lines = body.lines(); val i = lines.indexOfFirst { it.isNotBlank() }
-    if (i < 0 || lines[i].replace(Regex("^#{1,2} "), "").trim() != title.trim()) return body
+    if (i < 0 || Regex("^(> |- |\\d+\\. )").containsMatchIn(lines[i]) || plainPreview(lines[i]).trim() != title.trim()) return body
     return lines.drop(i + 1).dropWhile { it.isBlank() }.joinToString("\n")
 }

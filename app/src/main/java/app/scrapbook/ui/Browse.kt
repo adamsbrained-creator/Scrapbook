@@ -67,12 +67,13 @@ fun Sticky(item: Item, onClick: () -> Unit) {
 fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     val shelf = shelves.firstOrNull { it.name == name }
-    var editing by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
+    val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }; var styleSheet by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }; var inboxSheet by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }; var kind by remember { mutableStateOf<Kind?>(null) }
     var kindMenu by remember { mutableStateOf(false) }; var sortMenu by remember { mutableStateOf(false) }; var more by remember { mutableStateOf(false) }
     var byTitle by rememberSaveable { mutableStateOf(false) }; var grid by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(shelf) { if (shelf != null) existed = true else if (existed) nav.popBackStack() }
-    val inShelf = all.filter { name == "All" || it.collection == name }
+    val inShelf = all.filter { name == "All" || (name == "Pinned" && it.pinned) || (name == "Recent" && it.savedAt > System.currentTimeMillis() - 7L * 86_400_000L) || it.collection == name }
     val shown = inShelf.filter { n -> (kind == null || n.kind == kind) && (q.isBlank() || listOf(n.title, n.body, n.tags.joinToString(" ")).any { it.contains(q, true) }) }
         .let { l -> if (byTitle) l.sortedBy { it.title.lowercase() } else l.sortedByDescending { it.savedAt } }
         .sortedByDescending { it.pinned }
@@ -88,8 +89,9 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             Box {
                                 Box(Modifier.size(48.dp).tap("More options") { more = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
                                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
-                                    if (shelf != null) DropdownMenuItem(text = { Text("Edit collection") }, onClick = { more = false; editing = true })
-                                    DropdownMenuItem(text = { Text("All collections") }, onClick = { more = false; nav.navigate("collections") })
+                                    if (shelf != null) DropdownMenuItem(text = { Text("Edit box") }, onClick = { more = false; editing = true })
+                                    if (name == "Inbox") DropdownMenuItem(text = { Text("Change color") }, onClick = { more = false; inboxSheet = true })
+                                    DropdownMenuItem(text = { Text("All boxes") }, onClick = { more = false; nav.navigate("collections") })
                                 }
                             }
                         }
@@ -98,7 +100,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                         Column {
                             Row(verticalAlignment = Alignment.Bottom) {
                                 Text(name, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 36.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
-                                Text("  " + (if (inShelf.size == 1) "1 note" else "${inShelf.size} notes"), fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 7.dp))
+                                Text("  " + (if (inShelf.size == 1) "1 scrap" else "${inShelf.size} scraps"), fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 7.dp))
                             }
                             if (shelf != null && shelf.description.isNotBlank()) Text(shelf.description, fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
                         }
@@ -118,11 +120,11 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box {
                                     Row(Modifier.tap("Filter by type") { kindMenu = true }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(kind?.let { it.name + "s" } ?: "All notes", fontSize = 15.sp, color = Sb.mute); Ic("chevdown", 20.dp, Sb.mute)
+                                        Text(kind?.let { it.label + "s" } ?: "All scraps", fontSize = 15.sp, color = Sb.mute); Ic("chevdown", 20.dp, Sb.mute)
                                     }
                                     DropdownMenu(expanded = kindMenu, onDismissRequest = { kindMenu = false }) {
-                                        DropdownMenuItem(text = { Text("All notes") }, onClick = { kindMenu = false; kind = null })
-                                        Kind.entries.forEach { k -> DropdownMenuItem(text = { Text(k.name + "s") }, onClick = { kindMenu = false; kind = k }) }
+                                        DropdownMenuItem(text = { Text("All scraps") }, onClick = { kindMenu = false; kind = null })
+                                        Kind.entries.forEach { k -> DropdownMenuItem(text = { Text(k.label + "s") }, onClick = { kindMenu = false; kind = k }) }
                                     }
                                 }
                                 Box {
@@ -140,7 +142,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             }
                         }
                     }
-                    if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else "Nothing here yet. Tap New note to add the first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
+                    if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else "Nothing here yet. Tap New scrap to add the first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
                     else if (grid) items(shown.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             pair.forEach { NoteTile(it, nav, Modifier.weight(1f)) }
@@ -148,14 +150,15 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                         }
                     } else items(shown, key = { it.id }) { NoteRow(it, nav) }
                 }
-                Row(Modifier.align(Alignment.BottomEnd).padding(20.dp).shadow(10.dp, RoundedCornerShape(30.dp)).clip(RoundedCornerShape(30.dp)).background(Sb.ink)
-                    .tap("New note") { vm.pendingShelf = if (shelf != null) name else null; nav.navigate("edit/0") }.padding(horizontal = 24.dp, vertical = 18.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Ic("edit", 24.dp, Sb.card); Text("New note", color = Sb.card, fontWeight = FontWeight.Medium, fontSize = 17.sp)
-                }
+                val addScrap = { vm.pendingShelf = if (shelf != null) name else null; nav.navigate("edit/0") }
+                if (navStyle == 1) BottomNav(Modifier.align(Alignment.BottomEnd), { menuSheet = true }, addScrap)
+                else NewScrapPill(Modifier.align(Alignment.BottomEnd), addScrap)
             }
         }
         if (editing && shelf != null) ShelfSheet(vm, shelf) { editing = false }
+        if (inboxSheet) InboxSheet(vm) { inboxSheet = false }
+        if (menuSheet) MenuSheet(nav, { menuSheet = false }, { styleSheet = true }) { vm.pendingShelf = null }
+        if (styleSheet) AppStyleSheet(vm) { styleSheet = false }
     }
 }
 
@@ -187,28 +190,28 @@ fun SearchScreen(vm: ArchiveViewModel, nav: NavController) {
                 Row(Modifier.weight(1f).padding(end = 12.dp).clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .55f)).padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
                     Ic("search", 22.dp, Sb.mute); Spacer(Modifier.width(12.dp))
                     BasicTextField(q, { q = it }, Modifier.weight(1f).focusRequester(focus), singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = Sb.ink), cursorBrush = SolidColor(t.acc),
-                        decorationBox = { inner -> Box { if (q.isEmpty()) Text("Search notes, tags, collections", color = Sb.mute, fontSize = 16.sp); inner() } })
+                        decorationBox = { inner -> Box { if (q.isEmpty()) Text("Search scraps, tags, boxes", color = Sb.mute, fontSize = 16.sp); inner() } })
                     if (q.isNotEmpty()) Box(Modifier.size(28.dp).tap("Clear search") { q = "" }, Alignment.Center) { Text("✕", color = Sb.mute, fontSize = 14.sp) }
                 }
             }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), Arrangement.spacedBy(8.dp)) {
                 Chip("All", kind == null) { kind = null }
-                Kind.entries.forEach { k -> Chip(k.name + "s", kind == k) { kind = k } }
+                Kind.entries.forEach { k -> Chip(k.label + "s", kind == k) { kind = k } }
             }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (shelfHits.isNotEmpty()) item {
                     Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(8.dp), Alignment.CenterVertically) {
-                        Text("Collections", fontSize = 13.sp, color = Sb.mute)
+                        Text("Boxes", fontSize = 13.sp, color = Sb.mute)
                         shelfHits.forEach { s -> Chip(s.name) { nav.navigate("shelf/${s.name}") } }
                     }
                 }
                 item { Text(if (res.size == 1) "1 result" else "${res.size} results", fontSize = 13.sp, color = Sb.mute) }
                 items(res, key = { it.id }) { n ->
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("item/${n.id}") }.padding(18.dp),
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("edit/${n.id}") }.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(hl(n.title, q, mark), fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 18.sp)
                         Text(hl(plainPreview(bodyWithoutTitle(n.title, n.body)), q, mark), fontSize = 14.sp, color = Sb.mute, maxLines = 2)
-                        Text("${n.collection} · ${n.kind.name}", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
+                        Text("${n.collection} · ${n.kind.label}", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
             }
@@ -237,7 +240,7 @@ fun RediscoverScreen(vm: ArchiveViewModel, nav: NavController) {
                 Text(if (queue.isEmpty()) "0/0" else "${minOf(i + 1, queue.size)}/${queue.size}", Modifier.width(48.dp), textAlign = TextAlign.End, fontSize = 13.sp, color = Sb.mute)
             }
             Spacer(Modifier.height(24.dp))
-            if (cur == null) Text(if (queue.isEmpty()) "Nothing saved yet. Old notes will show up here." else "That's everything for now.", fontFamily = headFont(), fontSize = 20.sp,
+            if (cur == null) Text(if (queue.isEmpty()) "Nothing saved yet. Old scraps will show up here." else "That's everything for now.", fontFamily = headFont(), fontSize = 20.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.padding(top = 80.dp))
             else Box(Modifier.fillMaxWidth().height(330.dp)) {
                 Box(Modifier.matchParentSize().padding(horizontal = 10.dp).rotate(-5f).clip(RoundedCornerShape(32.dp)).background(Sb.line))
@@ -245,7 +248,7 @@ fun RediscoverScreen(vm: ArchiveViewModel, nav: NavController) {
                 Column(Modifier.matchParentSize().offset { IntOffset(x.roundToInt(), 0) }.rotate(x / 25f).shadow(8.dp, RoundedCornerShape(32.dp)).clip(RoundedCornerShape(32.dp)).background(Sb.card)
                     .pointerInput(i) { detectDragGestures(onDragEnd = { if (x > 200f) next(true) else if (x < -200f) next(false) else x = 0f }) { c, d -> c.consume(); x += d.x } }
                     .padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("${cur.collection} · ${cur.kind.name}", fontSize = 13.sp, color = Sb.mute)
+                    Text("${cur.collection} · ${cur.kind.label}", fontSize = 13.sp, color = Sb.mute)
                     Text(cur.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 26.sp, lineHeight = 30.sp)
                     Text(plainPreview(bodyWithoutTitle(cur.title, cur.body), "\n"), fontFamily = headFont(), fontSize = 16.sp, lineHeight = 24.sp, color = Sb.ink.copy(alpha = .8f), maxLines = 8)
                 }

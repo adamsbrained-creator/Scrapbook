@@ -66,11 +66,26 @@ private fun mdTransform(acc: Color) = VisualTransformation { text ->
             if (st != null && line.isNotEmpty()) addStyle(st, i, i + line.length)
             if (line.startsWith("- [ ] ") || line.startsWith("- [x] ")) addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + 5)
             else if (line.startsWith("- ")) addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + 1)
+            else NUM.find(line)?.let { m -> addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + m.value.length - 1) }
+            for (m in INLINE.findAll(line)) {
+                val g = m.groupValues; val s0 = i + m.range.first; val e0 = i + m.range.last + 1
+                val mk = if (g[4].isNotEmpty()) 1 else 2
+                val st2 = when {
+                    g[1].isNotEmpty() -> SpanStyle(fontWeight = FontWeight.Bold)
+                    g[2].isNotEmpty() -> SpanStyle(textDecoration = TextDecoration.LineThrough)
+                    g[3].isNotEmpty() -> SpanStyle(background = acc.copy(alpha = .3f))
+                    else -> SpanStyle(fontStyle = FontStyle.Italic)
+                }
+                addStyle(st2, s0, e0); addStyle(SpanStyle(color = Sb.mute), s0, s0 + mk); addStyle(SpanStyle(color = Sb.mute), e0 - mk, e0)
+            }
             i += line.length + 1
         }
     }
     TransformedText(a, OffsetMapping.Identity)
 }
+
+private val NUM = Regex("^(\\d+)\\. ")
+private val INLINE = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*")
 
 private val LINE_PREFIXES = listOf("## ", "# ", "> ", "- [x] ", "- [ ] ", "- ")
 
@@ -80,12 +95,22 @@ private fun TextFieldValue.toggleLine(prefix: String): TextFieldValue {
     val ls = s.lastIndexOf('\n', pos - 1) + 1
     val le = s.indexOf('\n', pos).let { if (it < 0) s.length else it }
     val line = s.substring(ls, le)
-    val cur = LINE_PREFIXES.firstOrNull { line.startsWith(it) }
+    val num = NUM.find(line)?.value
+    val cur = LINE_PREFIXES.firstOrNull { line.startsWith(it) } ?: num
     val stripped = if (cur != null) line.removePrefix(cur) else line
-    val newLine = if (cur == prefix) stripped else prefix + stripped
+    val same = cur == prefix || (prefix == "1. " && num != null)
+    val newLine = if (same) stripped else prefix + stripped
     val d = newLine.length - line.length
     return copy(text = s.substring(0, ls) + newLine + s.substring(le),
         selection = TextRange((selection.start + d).coerceAtLeast(ls), (selection.end + d).coerceAtLeast(ls)))
+}
+
+private fun TextFieldValue.wrap(marker: String): TextFieldValue {
+    val a = minOf(selection.start, selection.end).coerceIn(0, text.length); val b = maxOf(selection.start, selection.end).coerceIn(0, text.length)
+    val m = marker.length; val sel = text.substring(a, b)
+    if (a >= m && b + m <= text.length && text.substring(a - m, a) == marker && text.substring(b, b + m) == marker)
+        return copy(text = text.substring(0, a - m) + sel + text.substring(b + m), selection = TextRange(a - m, b - m))
+    return copy(text = text.substring(0, a) + marker + sel + marker + text.substring(b), selection = TextRange(a + m, b + m))
 }
 
 private fun TextFieldValue.insertDivider(): TextFieldValue {
@@ -99,9 +124,10 @@ private fun continueList(old: TextFieldValue, new: TextFieldValue): TextFieldVal
     if (new.text.length != old.text.length + 1 || new.selection.start == 0 || new.text[new.selection.start - 1] != '\n') return new
     val s = new.text; val nl = new.selection.start - 1
     val ls = s.lastIndexOf('\n', nl - 1) + 1; val line = s.substring(ls, nl)
-    val prefix = listOf("- [x] ", "- [ ] ", "- ").firstOrNull { line.startsWith(it) } ?: return new
+    val numM = NUM.find(line)
+    val prefix = numM?.value ?: listOf("- [x] ", "- [ ] ", "- ").firstOrNull { line.startsWith(it) } ?: return new
     if (line.length == prefix.length) return new.copy(text = s.substring(0, ls) + s.substring(nl), selection = TextRange(ls + 1))
-    val cont = if (prefix == "- [x] ") "- [ ] " else prefix
+    val cont = when { numM != null -> "${numM.groupValues[1].toInt() + 1}. "; prefix == "- [x] " -> "- [ ] "; else -> prefix }
     return new.copy(text = s.substring(0, nl + 1) + cont + s.substring(nl + 1), selection = TextRange(nl + 1 + cont.length))
 }
 
@@ -116,6 +142,19 @@ private fun TbIcon(kind: String, desc: String, color: Color = Sb.ink, onClick: (
 }
 
 /** A photo as a taped polaroid; the cross removes it. */
+@Composable
+private fun TbRich(label: String, desc: String, italic: Boolean = false, strike: Boolean = false, mark: Color? = null, onClick: () -> Unit) {
+    Box(Modifier.size(44.dp).tap(desc, onClick), Alignment.Center) {
+        Text(label, fontSize = 17.sp, fontWeight = if (label == "B") FontWeight.ExtraBold else FontWeight.Medium,
+            fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
+            textDecoration = if (strike) TextDecoration.LineThrough else TextDecoration.None, color = Sb.ink,
+            modifier = if (mark != null) Modifier.background(mark.copy(alpha = .35f)).padding(horizontal = 3.dp) else Modifier)
+    }
+}
+
+@Composable
+private fun TbDivider() { Box(Modifier.padding(horizontal = 4.dp).width(1.dp).height(24.dp).background(Sb.line)) }
+
 @Composable
 private fun Polaroid(uri: String, kind: Kind, i: Int, onRemove: () -> Unit) {
     Box(Modifier.padding(horizontal = 8.dp, vertical = 12.dp).rotate(if (i % 2 == 0) -3f else 3f)) {
@@ -164,7 +203,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
 
     fun draft(): Item? {
         if (title.isBlank() && body.text.isBlank() && imgs.isEmpty()) return null
-        val firstLine = body.text.lineSequence().firstOrNull { it.isNotBlank() }?.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- )"), "")?.take(50)
+        val firstLine = body.text.lineSequence().firstOrNull { it.isNotBlank() }?.let { plainPreview(it) }?.takeIf { it.isNotBlank() }?.take(50)
         val base = vm.items.value.firstOrNull { it.id == curId } ?: existing ?: Item(title = "", body = "", kind = kind, collection = shelf)
         return base.copy(id = curId, title = title.ifBlank { firstLine ?: "Untitled" }, body = body.text, kind = kind, collection = shelf,
             color = color, imageUri = imgs.firstOrNull(), images = imgs.drop(1).joinToString("\n"), source = source,
@@ -201,7 +240,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                 Box {
                     Box(Modifier.size(44.dp).tap("More options") { menu = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text(if (more) "Hide details" else "Details: color, collection, tags") }, onClick = { menu = false; more = !more })
+                        DropdownMenuItem(text = { Text(if (more) "Hide details" else "Details: color, box, tags") }, onClick = { menu = false; more = !more })
                         if (live != null) {
                             DropdownMenuItem(text = { Text(if (live.pinned) "Unpin" else "Pin") }, onClick = { menu = false; vm.togglePin(live) })
                             DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; nav.navigate("layouts/${live.id}") })
@@ -229,7 +268,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         ColorDots(color) { color = it }
                         Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(5.dp)) {
-                            Kind.entries.forEach { Chip(it.name, kind == it) { kind = it } }
+                            Kind.entries.forEach { Chip(it.label, kind == it) { kind = it } }
                             Chip("Inbox", shelf == "Inbox") { shelf = "Inbox" }
                             vm.shelves.value.forEach { Chip(it.name, shelf == it.name) { shelf = it.name } }
                         }
@@ -237,12 +276,21 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                     }
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TbRich("B", "Bold") { edit(body.wrap("**")) }
+                    TbRich("I", "Italic", italic = true) { edit(body.wrap("*")) }
+                    TbRich("S", "Strikethrough", strike = true) { edit(body.wrap("~~")) }
+                    TbRich("ab", "Highlight", mark = t.acc) { edit(body.wrap("==")) }
+                    TbDivider()
                     TbText("H1", "Heading") { edit(body.toggleLine("# ")) }
                     TbText("H2", "Subheading") { edit(body.toggleLine("## ")) }
-                    TbText("❝", "Quote") { edit(body.toggleLine("> ")) }
+                    TbDivider()
                     TbText("•", "Bullet list") { edit(body.toggleLine("- ")) }
+                    TbText("1.", "Numbered list") { edit(body.toggleLine("1. ")) }
                     TbIcon("check", "Checklist") { edit(body.toggleLine("- [ ] ")) }
+                    TbDivider()
+                    TbText("❝", "Quote") { edit(body.toggleLine("> ")) }
                     TbText("—", "Divider") { edit(body.insertDivider()) }
+                    TbDivider()
                     TbIcon("image", "Add image", t.acc) { addImage() }
                     TbIcon("undo", "Undo", if (undo.isNotEmpty()) Sb.ink else Sb.mute.copy(alpha = .4f)) { if (undo.isNotEmpty()) { redo.addLast(body); body = undo.removeLast() } }
                     TbIcon("redo", "Redo", if (redo.isNotEmpty()) Sb.ink else Sb.mute.copy(alpha = .4f)) { if (redo.isNotEmpty()) { undo.addLast(body); body = redo.removeLast() } }

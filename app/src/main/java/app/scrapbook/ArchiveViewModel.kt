@@ -26,6 +26,8 @@ private val SERIF = booleanPreferencesKey("serif")
 private val RAD = intPreferencesKey("radius")
 private val DARK = intPreferencesKey("dark")
 private val HEADER = intPreferencesKey("header")
+private val INBOX = intPreferencesKey("inbox_color")
+private val NAV = intPreferencesKey("nav_style")
 private val WELCOMED = booleanPreferencesKey("welcomed")
 
 /** Something shared into the app from elsewhere, waiting to be saved. */
@@ -53,6 +55,12 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Main page header: 0 wordmark on the left, 1 wordmark centered, 2 round buttons with a centered wordmark. */
     val headerStyle: StateFlow<Int> = ds.data.map { it[HEADER] ?: 1 }.stateIn(viewModelScope, SharingStarted.Eagerly, 1)
     fun setHeader(i: Int) = edit { it[HEADER] = i }
+    /** Color of the Inbox box: -1 is gray, otherwise an index into the box colors. */
+    val inboxColor: StateFlow<Int> = ds.data.map { it[INBOX] ?: -1 }.stateIn(viewModelScope, SharingStarted.Eagerly, -1)
+    fun setInboxColor(i: Int) = edit { it[INBOX] = i }
+    /** Add button style: 0 is the "New scrap" pill, 1 is a bottom bar with a menu button and a round add button. */
+    val navStyle: StateFlow<Int> = ds.data.map { it[NAV] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    fun setNav(i: Int) = edit { it[NAV] = i }
     fun setAccent(i: Int) = edit { it[ACC] = i }
     fun setSerif(b: Boolean) = edit { it[SERIF] = b }
     fun setRadius(dp: Int) = edit { it[RAD] = dp }
@@ -201,7 +209,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
                             if (c.moveToFirst() && i >= 0) c.getString(i) else null
                         }?.substringBeforeLast('.')
                         val lines = text.lines(); val h = lines.indexOfFirst { it.startsWith("# ") }
-                        val title = (if (h >= 0) lines[h].drop(2).trim() else name ?: "Imported note").take(80)
+                        val title = (if (h >= 0) lines[h].drop(2).trim() else name ?: "Imported scrap").take(80)
                         val body = (if (h >= 0) lines.filterIndexed { i, _ -> i != h } else lines).joinToString("\n").trim()
                         dao.upsert(Item(title = title, body = body, kind = Kind.Note, collection = "Inbox")); added++
                     } catch (e: Exception) { }
