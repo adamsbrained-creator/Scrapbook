@@ -180,7 +180,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                 else NewScrapPill(Modifier.align(Alignment.BottomEnd), addScrap)
             }
         }
-        if (editing && shelf != null) ShelfSheet(vm, shelf) { editing = false }
+        if (editing && shelf != null) ShelfSheet(vm, shelf, onDone = { editing = false })
         if (creatingSub && shelf != null) ShelfSheet(vm, null, { creatingSub = false }, parent = name)
         deletingSub?.let { n -> DeleteBoxSheet(n, vm, { deletingSub = null }) }
         deletingScrap?.let { n -> DeleteScrapSheet(n, vm) { deletingScrap = null } }

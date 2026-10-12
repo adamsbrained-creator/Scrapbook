@@ -197,8 +197,8 @@ fun CollectionsScreen(vm: ArchiveViewModel, nav: NavController) {
                 }
             }
         }
-        if (creating) ShelfSheet(vm, null) { creating = false }
-        edit?.let { ShelfSheet(vm, it) { edit = null } }
+        if (creating) ShelfSheet(vm, null, onDone = { creating = false })
+        edit?.let { ShelfSheet(vm, it, onDone = { edit = null }) }
         deleting?.let { n -> DeleteBoxSheet(n, vm, { deleting = null }) }
     }
 }
