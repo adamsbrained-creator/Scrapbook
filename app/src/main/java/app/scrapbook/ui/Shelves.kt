@@ -28,9 +28,9 @@ import app.scrapbook.*
 private val COLOR_NAMES = listOf("Butter", "Sage", "Blue", "Rose", "Lilac")
 private fun coverOf(s: Shelf) = Item(title = "", body = "", kind = Kind.Image, collection = "", imageUri = s.coverUri, color = s.color)
 
-/** Create (existing == null) or edit a collection: name, description, color, cover. Renaming moves its notes along. */
+/** Create (existing == null) or edit a collection: name, description, color, cover. Renaming moves its notes along. A new box goes inside `parent` ("" = main page). */
 @Composable
-fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit) {
+fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit, parent: String = "") {
     val all = vm.shelves.value
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var desc by remember { mutableStateOf(existing?.description ?: "") }
@@ -40,8 +40,8 @@ fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit) {
     val clean = name.trim()
     val clash = all.any { it.name.equals(clean, true) && it.name != existing?.name } || clean.equals("Inbox", true) || clean.equals("All", true)
     val ok = clean.isNotEmpty() && !clash
-    Sheet(if (existing == null) "New box" else "Edit box", onDone, doneLabel = if (existing == null) "Create box" else "Save", enabled = ok,
-        primary = { if (ok) { vm.saveShelf(Shelf(clean, desc.trim(), color, cover), existing?.name); onDone() } }) {
+    Sheet(if (existing != null) "Edit box" else if (parent.isNotBlank()) "New box in \"$parent\"" else "New box", onDone, doneLabel = if (existing == null) "Create box" else "Save", enabled = ok,
+        primary = { if (ok) { vm.saveShelf(Shelf(clean, desc.trim(), color, cover, existing?.parent ?: parent), existing?.name); onDone() } }) {
         InputBox { Field(name, { name = it.filterNot { c -> c in "/?#{}" } }, "Name", 18.sp, headFont(), FontWeight.Medium) }
         InputBox { Field(desc, { desc = it }, "Description (optional)", 15.sp, headFont()) }
         if (clash) Text("That name is already used.", fontSize = 11.sp, color = Color(0xFFB3261E))
@@ -60,21 +60,33 @@ fun ShelfSheet(vm: ArchiveViewModel, existing: Shelf?, onDone: () -> Unit) {
  */
 @Composable
 fun DeleteBoxSheet(name: String, vm: ArchiveViewModel, onDone: () -> Unit, afterDelete: () -> Unit = {}) {
-    val all by vm.items.collectAsState()
-    val count = all.count { it.collection == name }; val inbox = name == "Inbox"
-    val scraps = if (count == 1) "1 scrap" else "$count scraps"
+    val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
+    val inside = if (name == "Inbox") emptyList() else shelves.descendantsOf(name)
+    val tree = setOf(name) + inside.map { it.name }
+    val count = all.count { it.collection in tree }; val inbox = name == "Inbox"
+    val scraps = (if (count == 1) "1 scrap" else "$count scraps") + (if (inside.isEmpty()) "" else if (inside.size == 1) " and 1 box inside" else " and ${inside.size} boxes inside")
     var sure by remember { mutableStateOf(false) }
     fun finish() { onDone(); afterDelete() }
     Sheet(if (inbox) "Remove Inbox?" else "Delete \"$name\"?", onDone, doneLabel = "Cancel") {
         Text(if (inbox) "Inbox is where scraps land when you don't file them. Removing it hides the box. Your scraps stay in All scraps, and you can bring Inbox back from the Boxes screen."
-            else "Your scraps are not lost: they move to Inbox.", fontSize = 13.sp, color = Sb.mute)
+            else "Your scraps are not lost: they move to Inbox." + (if (inside.isEmpty()) "" else " Boxes inside it move up one level."), fontSize = 13.sp, color = Sb.mute)
         Row { Chip(if (inbox) "Remove Inbox, keep scraps" else "Delete box, keep scraps") { if (inbox) vm.removeInbox(false) else vm.deleteShelf(name); finish() } }
-        if (count > 0) {
+        if (count > 0 || inside.isNotEmpty()) {
             if (sure) Text("This permanently deletes $scraps and cannot be undone.", fontSize = 12.sp, color = Color(0xFFB3261E))
             Row { Chip(if (sure) "Yes, delete the box and $scraps" else "Delete the box and its $scraps…") {
                 if (!sure) sure = true else { if (inbox) vm.removeInbox(true) else vm.deleteShelfAndScraps(name); finish() }
             } }
         }
+    }
+}
+
+/** Confirm deleting a scrap (opened by long-pressing it in a list). Right after deleting, an Undo snackbar brings it back. */
+@Composable
+fun DeleteScrapSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) {
+    val title = item.title.ifBlank { "Untitled" }.let { if (it.length > 40) it.take(40) + "…" else it }
+    Sheet("Delete \"$title\"?", onDone, doneLabel = "Cancel") {
+        Text("The scrap is deleted right away. You can tap Undo straight after to bring it back.", fontSize = 13.sp, color = Sb.mute)
+        Row { Chip("Delete scrap") { vm.delete(item); onDone() } }
     }
 }
 
@@ -131,6 +143,7 @@ private fun ShelfCard(s: Shelf, count: Int, modifier: Modifier, nav: NavControll
         Column(Modifier.padding(18.dp).fillMaxWidth()) {
             Text(s.name, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 19.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp))
             Text(if (count == 1) "1 scrap" else "$count scraps", fontSize = 13.sp, color = Sb.mute)
+            if (s.parent.isNotBlank()) Text("in ${s.parent}", fontSize = 12.sp, color = Sb.mute, maxLines = 1)
             if (s.description.isNotBlank()) Text(s.description, fontSize = 12.sp, color = Sb.mute, maxLines = 2, modifier = Modifier.padding(top = 4.dp))
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Bottom) {

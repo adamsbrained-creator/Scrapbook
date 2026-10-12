@@ -28,6 +28,7 @@ private val DARK = intPreferencesKey("dark")
 private val HEADER = intPreferencesKey("header")
 private val INBOX = intPreferencesKey("inbox_color")
 private val NAV = intPreferencesKey("nav_style")
+private val EDITOR = intPreferencesKey("editor_style")
 private val WELCOMED = booleanPreferencesKey("welcomed")
 private val INBOX_HIDDEN = booleanPreferencesKey("inbox_hidden")
 
@@ -65,6 +66,9 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Add button style: 0 is the "New scrap" pill, 1 is a bottom bar with a menu button and a round add button. */
     val navStyle: StateFlow<Int> = ds.data.map { it[NAV] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     fun setNav(i: Int) = edit { it[NAV] = i }
+    /** Editor toolbar: 0 is the selection bubble (default), 1 is the floating pill. */
+    val editorStyle: StateFlow<Int> = ds.data.map { it[EDITOR] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    fun setEditorStyle(i: Int) = edit { it[EDITOR] = i }
     fun setAccent(i: Int) = edit { it[ACC] = i }
     fun setSerif(b: Boolean) = edit { it[SERIF] = b }
     fun setRadius(dp: Int) = edit { it[RAD] = dp }
@@ -80,18 +84,22 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Saves a collection. If it was renamed, its notes move to the new name. */
     fun saveShelf(s: Shelf, oldName: String? = null) {
         viewModelScope.launch {
-            if (oldName != null && oldName != s.name) { dao.removeShelf(oldName); dao.moveItems(oldName, s.name) }
+            if (oldName != null && oldName != s.name) { dao.removeShelf(oldName); dao.moveItems(oldName, s.name); dao.moveShelves(oldName, s.name) }
             dao.upsertShelf(s)
         }
     }
-    /** Deletes the box and keeps its scraps: they move to Inbox (which reappears if it was hidden). */
+    /** Deletes the box and keeps its scraps: they move to Inbox (which reappears if it was hidden). Boxes inside it move up one level. */
     fun deleteShelf(name: String) {
         val hadScraps = items.value.any { it.collection == name }
-        viewModelScope.launch { dao.moveItems(name, "Inbox"); dao.removeShelf(name) }
+        val up = shelves.value.firstOrNull { it.name == name }?.parent ?: ""
+        viewModelScope.launch { dao.moveItems(name, "Inbox"); dao.moveShelves(name, up); dao.removeShelf(name) }
         if (hadScraps && inboxHidden.value) setInboxHidden(false)
     }
-    /** Deletes the box and every scrap in it. Cannot be undone. */
-    fun deleteShelfAndScraps(name: String) { viewModelScope.launch { dao.deleteItemsIn(name); dao.removeShelf(name) } }
+    /** Deletes the box, every box inside it, and every scrap in all of them. Cannot be undone. */
+    fun deleteShelfAndScraps(name: String) {
+        val names = listOf(name) + shelves.value.descendantsOf(name).map { it.name }
+        viewModelScope.launch { names.forEach { dao.deleteItemsIn(it); dao.removeShelf(it) } }
+    }
     /** Removes the Inbox box. With deleteScraps, the scraps in it are deleted too (cannot be undone). */
     fun removeInbox(deleteScraps: Boolean) {
         viewModelScope.launch { if (deleteScraps) dao.deleteItemsIn("Inbox") }
@@ -134,7 +142,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
             val f = s.coverUri?.let { File(Uri.parse(it).path ?: "") }?.takeIf { it.exists() }
             if (f != null) imgs += f
             sarr.put(org.json.JSONObject().apply {
-                put("name", s.name); put("description", s.description); put("color", s.color)
+                put("name", s.name); put("description", s.description); put("color", s.color); put("parent", s.parent)
                 put("coverUri", f?.let { "images/${it.name}" } ?: org.json.JSONObject.NULL)
             })
         }
@@ -168,7 +176,7 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
                             val o = a.getJSONObject(k); val n = o.getString("name"); if (n in have) continue
                             val cv = o.optString("coverUri", "").takeIf { it.startsWith("images/") }
                                 ?.let { Uri.fromFile(File(ctx.filesDir, "imp_${stamp}_" + File(it).name)).toString() }
-                            dao.upsertShelf(Shelf(n, o.optString("description"), o.optInt("color"), cv))
+                            dao.upsertShelf(Shelf(n, o.optString("description"), o.optInt("color"), cv, o.optString("parent", "")))
                         }
                     }
                     val arr = org.json.JSONArray(json ?: return@withContext -1)

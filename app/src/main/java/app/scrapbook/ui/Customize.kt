@@ -98,7 +98,7 @@ fun CustomizeSheet(item: Item, vm: ArchiveViewModel, onDone: () -> Unit) = Sheet
 /** App-wide style: accent, heading font, corner radius. Persisted with DataStore. */
 @Composable
 fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
-    val t = LocalSb.current; val mode by vm.darkMode.collectAsState(); val header by vm.headerStyle.collectAsState(); val navMode by vm.navStyle.collectAsState(); val ctx = LocalContext.current; val scope = rememberCoroutineScope(); var msg by remember { mutableStateOf("") }
+    val t = LocalSb.current; val mode by vm.darkMode.collectAsState(); val header by vm.headerStyle.collectAsState(); val navMode by vm.navStyle.collectAsState(); val editorMode by vm.editorStyle.collectAsState(); val ctx = LocalContext.current; val scope = rememberCoroutineScope(); var msg by remember { mutableStateOf("") }
     val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u ->
         if (u != null) vm.restoreBackup(u) { n -> msg = if (n < 0) "Couldn't read that file." else "Restored $n new items." }
     }
@@ -113,6 +113,7 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
         Lb("Appearance"); Seg(listOf("System", "Light", "Dark"), mode) { vm.setDark(it) }
         Lb("Main page header"); Seg(listOf("Left", "Center", "Round"), header) { vm.setHeader(it) }
         Lb("Add button"); Seg(listOf("Pill", "Bottom bar"), navMode) { vm.setNav(it) }
+        Lb("Editor"); Seg(listOf("Selection bubble", "Floating pill"), editorMode) { vm.setEditorStyle(it) }
         Lb("Backup")
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Chip("Back up archive") {
@@ -132,7 +133,7 @@ fun AppStyleSheet(vm: ArchiveViewModel, onDone: () -> Unit) {
 /** Shown once on first launch. */
 @Composable
 fun Welcome(onDone: () -> Unit, onExamples: () -> Unit) = Sheet("Welcome to Scrapbook", onDone) {
-    listOf("Tap New scrap to start writing. The toolbar adds formatting, lists, quotes and checklists; it saves as you type.",
+    listOf("Tap New scrap to start writing. Select text to format it, and use the bar at the bottom for lists, quotes and checklists. It saves as you type.",
         "Every page can change layout and style without losing a word.",
         "Tap the menu (three lines) to restyle the app, or back it up.").forEach {
         Text(it, fontSize = 15.sp, lineHeight = 22.sp)

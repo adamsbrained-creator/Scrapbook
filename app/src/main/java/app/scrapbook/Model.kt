@@ -25,9 +25,9 @@ data class Item(
     val accent: Int = 0, val cover: String? = null,
 )
 
-/** A user-made collection. Notes join it by name (Item.collection). "Inbox" and "All" are built in. */
+/** A user-made collection. Notes join it by name (Item.collection). "Inbox" and "All" are built in. A box can sit inside another box: parent is that box's name ("" = main page). */
 @Entity(tableName = "collections")
-data class Shelf(@PrimaryKey val name: String, val description: String = "", val color: Int = 0, val coverUri: String? = null)
+data class Shelf(@PrimaryKey val name: String, val description: String = "", val color: Int = 0, val coverUri: String? = null, val parent: String = "")
 
 fun itemsLabel(n: Int) = if (n == 1) "1 item" else "$n items"
 
@@ -36,3 +36,16 @@ fun Item.allImages(): List<String> = listOfNotNull(imageUri) + images.split("\n"
 
 /** What a type is called on screen: a plain note is a "Scrap". */
 val Kind.label: String get() = if (this == Kind.Note) "Scrap" else name
+
+/** Boxes that show on the main page: no parent, or a parent that no longer exists (so nothing can get lost). */
+fun List<Shelf>.topLevel(): List<Shelf> { val names = map { it.name }.toSet(); return filter { it.parent.isBlank() || it.parent !in names } }
+
+/** The boxes directly inside the box called name. */
+fun List<Shelf>.childrenOf(name: String): List<Shelf> = filter { it.parent == name && it.name != name }
+
+/** Every box inside name, at any depth (not including name itself). */
+fun List<Shelf>.descendantsOf(name: String): List<Shelf> {
+    val out = mutableListOf<Shelf>(); val seen = mutableSetOf(name); val queue = ArrayDeque(listOf(name))
+    while (queue.isNotEmpty()) { val n = queue.removeFirst(); childrenOf(n).forEach { if (seen.add(it.name)) { out += it; queue += it.name } } }
+    return out
+}

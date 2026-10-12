@@ -39,8 +39,8 @@ fun plainPreview(text: String, sep: String = " · "): String =
     text.lines().map { l -> stripInline(l.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- |\\d+\\. )"), "")) }
         .filter { it.isNotBlank() && it != "---" }.joinToString(sep)
 
-/** Removes **bold**, *italic*, ~~strike~~ and ==highlight== marks, keeping the text. */
-fun stripInline(s: String): String = s.replace(Regex("\\*\\*(.+?)\\*\\*"), "\$1").replace(Regex("~~(.+?)~~"), "\$1")
+/** Removes **bold**, *italic*, ~~strike~~ and ==highlight== marks and [link](url) syntax, keeping the text. */
+fun stripInline(s: String): String = s.replace(Regex("\\[([^\\]\\n]+)\\]\\([^)\\s]*\\)"), "\$1").replace(Regex("\\*\\*(.+?)\\*\\*"), "\$1").replace(Regex("~~(.+?)~~"), "\$1")
     .replace(Regex("==(.+?)=="), "\$1").replace(Regex("\\*(.+?)\\*"), "\$1")
 
 /**

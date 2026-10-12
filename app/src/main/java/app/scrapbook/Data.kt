@@ -23,6 +23,7 @@ interface ItemDao {
     @Upsert suspend fun upsertShelf(shelf: Shelf)
     @Query("DELETE FROM collections WHERE name = :name") suspend fun removeShelf(name: String)
     @Query("UPDATE items SET collection = :newName WHERE collection = :oldName") suspend fun moveItems(oldName: String, newName: String)
+    @Query("UPDATE collections SET parent = :newParent WHERE parent = :oldParent") suspend fun moveShelves(oldParent: String, newParent: String)
     @Query("DELETE FROM items WHERE collection = :name") suspend fun deleteItemsIn(name: String)
     @Query("SELECT * FROM items ORDER BY savedAt ASC LIMIT 20") suspend fun oldest(): List<Item>
     @Query("SELECT COUNT(*) FROM items") suspend fun count(): Int
@@ -53,7 +54,11 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
-@Database(entities = [Item::class, Shelf::class], version = 8, exportSchema = false)
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) { db.execSQL("ALTER TABLE collections ADD COLUMN parent TEXT NOT NULL DEFAULT ''") }
+}
+
+@Database(entities = [Item::class, Shelf::class], version = 9, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDb : RoomDatabase() { abstract fun dao(): ItemDao }
 
@@ -62,6 +67,6 @@ object Db {
     @Volatile private var inst: AppDb? = null
     fun get(c: android.content.Context): AppDb = inst ?: synchronized(this) {
         inst ?: Room.databaseBuilder(c.applicationContext, AppDb::class.java, "scrapbook.db")
-            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { inst = it }
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { inst = it }
     }
 }

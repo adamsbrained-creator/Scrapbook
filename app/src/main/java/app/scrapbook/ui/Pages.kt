@@ -61,32 +61,35 @@ private fun date(ms: Long) = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault(
 @Composable private fun Title(text: String, size: TextUnit = 26.sp, align: TextAlign = TextAlign.Start) =
     Text(text, fontFamily = LocalPage.current.family ?: headFont(), fontWeight = FontWeight.SemiBold, fontSize = size, lineHeight = size * 1.15f, textAlign = align, modifier = Modifier.semantics { heading() })
 private val NUM_LINE = Regex("^(\\d+)\\. ")
-private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|https?://[^\\s]+")
+private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|\\[([^\\]\\n]+)\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s]+")
 
-/** Inline formatting (bold, italic, strike, highlight) and tappable web links. */
+/** Inline formatting (bold, italic, strike, highlight), [text](url) links and tappable web links. */
 @Composable
 private fun linkify(text: String): AnnotatedString {
     val acc = LocalSb.current.acc
-    return buildAnnotatedString {
-        var i = 0
-        for (m in RICH.findAll(text)) {
-            append(text.substring(i, m.range.first))
-            val g = m.groupValues
-            when {
-                g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(g[1]) }
-                g[2].isNotEmpty() -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { append(g[2]) }
-                g[3].isNotEmpty() -> withStyle(SpanStyle(background = acc.copy(alpha = .3f))) { append(g[3]) }
-                g[4].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(g[4]) }
-                else -> {
-                    val raw = m.value; val url = raw.trimEnd('.', ',', ';', ':', '!', '?', ')', '"', '”', '\'')
-                    withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(url) }
-                    append(raw.substring(url.length))
-                }
+    return buildAnnotatedString { appendRich(text, acc) }
+}
+
+private fun AnnotatedString.Builder.appendRich(text: String, acc: Color) {
+    var i = 0
+    for (m in RICH.findAll(text)) {
+        append(text.substring(i, m.range.first))
+        val g = m.groupValues
+        when {
+            g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendRich(g[1], acc) }
+            g[2].isNotEmpty() -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendRich(g[2], acc) }
+            g[3].isNotEmpty() -> withStyle(SpanStyle(background = acc.copy(alpha = .3f))) { appendRich(g[3], acc) }
+            g[4].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendRich(g[4], acc) }
+            g[5].isNotEmpty() -> withLink(LinkAnnotation.Url(g[6], TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(g[5]) }
+            else -> {
+                val raw = m.value; val url = raw.trimEnd('.', ',', ';', ':', '!', '?', ')', '"', '”', '\'')
+                withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(url) }
+                append(raw.substring(url.length))
             }
-            i = m.range.last + 1
         }
-        append(text.substring(i))
+        i = m.range.last + 1
     }
+    append(text.substring(i))
 }
 
 /** Lets a tapped checklist line rewrite the note body: (oldLine, newLine). */

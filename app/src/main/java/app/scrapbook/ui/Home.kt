@@ -57,7 +57,7 @@ fun SegIcon(kind: String, on: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TileBox(name: String, count: Int, tab: Color, modifier: Modifier, onHold: () -> Unit, onClick: () -> Unit) {
+fun TileBox(name: String, count: Int, tab: Color, modifier: Modifier, onHold: () -> Unit, onClick: () -> Unit) {
     Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(Sb.card).tapOrHold(name, "Delete box", onHold, onClick)) {
         Box(Modifier.align(Alignment.TopEnd).padding(end = 16.dp).width(32.dp).height(8.dp)
             .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(tab))
@@ -79,13 +79,13 @@ private fun RowTitle(n: Item, size: TextUnit = 19.sp, lines: Int = 1) {
     Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = size, maxLines = lines, overflow = TextOverflow.Ellipsis)
 }
 
-/** One scrap in the list. It follows the scrap's page layout, so changing the layout changes how it looks here. */
+/** One scrap in the list. It follows the scrap's page layout, so changing the layout changes how it looks here. Hold it to run onHold (delete). */
 @Composable
-fun NoteRow(n: Item, nav: NavController) {
+fun NoteRow(n: Item, nav: NavController, onHold: () -> Unit = {}) {
     val imgs = n.allImages(); val preview = plainPreview(bodyWithoutTitle(n.title, n.body))
     val shape = RoundedCornerShape(28.dp); val tint = LocalSb.current.tint
     val open = { nav.navigate("edit/${n.id}") }
-    val card = Modifier.fillMaxWidth().clip(shape).background(Sb.card).tap("Open ${n.title}", open).padding(20.dp)
+    val card = Modifier.fillMaxWidth().clip(shape).background(Sb.card).tapOrHold("Open ${n.title}", "Delete scrap", onHold, open).padding(20.dp)
     when (n.layout) {
         Layout.Classic -> Row(card, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -151,7 +151,7 @@ fun NoteRow(n: Item, nav: NavController) {
             if (preview.isNotBlank()) Text(preview, fontSize = 14.sp, color = Sb.mute, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("In ${n.collection}", fontSize = 11.sp, color = Sb.mute)
         }
-        Layout.Blank -> Box(Modifier.fillMaxWidth().height(132.dp).clip(shape).background(Sb.card).tap("Open ${n.title}", open)) {
+        Layout.Blank -> Box(Modifier.fillMaxWidth().height(132.dp).clip(shape).background(Sb.card).tapOrHold("Open ${n.title}", "Delete scrap", onHold, open)) {
             Box(Modifier.align(Alignment.TopStart).padding(start = 18.dp, top = 16.dp).rotate(-3f).width(130.dp)
                 .clip(RoundedCornerShape(8.dp)).background(Sb.notes[n.color % 5]).padding(8.dp)) {
                 Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -166,8 +166,8 @@ fun NoteRow(n: Item, nav: NavController) {
 }
 
 @Composable
-fun NoteTile(n: Item, nav: NavController, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(28.dp)).background(Sb.card).tap("Open ${n.title}") { nav.navigate("edit/${n.id}") }.padding(16.dp),
+fun NoteTile(n: Item, nav: NavController, modifier: Modifier, onHold: () -> Unit = {}) {
+    Column(modifier.clip(RoundedCornerShape(28.dp)).background(Sb.card).tapOrHold("Open ${n.title}", "Delete scrap", onHold) { nav.navigate("edit/${n.id}") }.padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(n.title, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Meta(n, false)
@@ -251,7 +251,7 @@ fun NotePreviewArt(n: Item) {
 
 /** Lets the content be flicked left or right to dismiss it. */
 @Composable
-private fun SwipeAway(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+fun SwipeAway(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     var x by remember { mutableFloatStateOf(0f) }
     Box(Modifier.offset { IntOffset(x.roundToInt(), 0) }.alpha((1f - abs(x) / 900f).coerceIn(0.2f, 1f))
         .pointerInput(Unit) { detectHorizontalDragGestures(onDragEnd = { if (abs(x) > 220f) onDismiss() else x = 0f }) { c, d -> c.consume(); x += d } }) { content() }
@@ -325,7 +325,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     val inboxColor by vm.inboxColor.collectAsState(); val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
     val snack = remember { SnackbarHostState() }
-    val inboxHidden by vm.inboxHidden.collectAsState(); var deleting by remember { mutableStateOf<String?>(null) }
+    val inboxHidden by vm.inboxHidden.collectAsState(); var deleting by remember { mutableStateOf<String?>(null) }; var deletingScrap by remember { mutableStateOf<Item?>(null) }
     var style by remember { mutableStateOf(false) }; var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState(); var menu by remember { mutableStateOf(false) }
     var grid by rememberSaveable { mutableStateOf(false) }; var byTitle by rememberSaveable { mutableStateOf(false) }; var asc by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(deleted) {
@@ -377,7 +377,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                     item {
                         data class Tile(val name: String, val count: Int, val tab: Color)
                         val inboxTile = if (inboxHidden) emptyList<Tile>() else listOf(Tile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size]))
-                        val tiles = shelves.map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + inboxTile
+                        val tiles = shelves.topLevel().map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + inboxTile
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             tiles.chunked(4).forEach { row ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -404,10 +404,10 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                     if (sorted.isEmpty()) item { Text("No scraps yet. Tap New scrap to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
                     else if (grid) items(sorted.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            pair.forEach { NoteTile(it, nav, Modifier.weight(1f)) }
+                            pair.forEach { n -> NoteTile(n, nav, Modifier.weight(1f)) { deletingScrap = n } }
                             if (pair.size == 1) Spacer(Modifier.weight(1f))
                         }
-                    } else items(sorted, key = { it.id }) { NoteRow(it, nav) }
+                    } else items(sorted, key = { it.id }) { n -> NoteRow(n, nav) { deletingScrap = n } }
                 }
                 val addScrap = { vm.pendingShelf = null; nav.navigate("edit/0") }
                 if (navStyle == 1) BottomNav(Modifier.align(Alignment.BottomEnd), { menuSheet = true }, addScrap)
@@ -417,6 +417,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
         if (style) AppStyleSheet(vm) { style = false }
         if (menuSheet) MenuSheet(nav, { menuSheet = false }, { style = true }) { vm.pendingShelf = null }
         deleting?.let { n -> DeleteBoxSheet(n, vm, { deleting = null }) }
+        deletingScrap?.let { n -> DeleteScrapSheet(n, vm) { deletingScrap = null } }
         if (!welcomed) Welcome({ vm.dismissWelcome() }, { vm.addExamples() })
     }
 }

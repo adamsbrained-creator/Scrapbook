@@ -12,12 +12,13 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, grid, folder, chevron, newfile, sort, down, up, star, edit */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -73,6 +74,23 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                     if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
                 }
                 p.close(); drawPath(p, color)
+            }
+            "link" -> rotate(-45f, Offset(.5f * w, .5f * w)) {
+                drawRoundRect(color, Offset(.06f * w, .38f * w), Size(.52f * w, .24f * w), CornerRadius(.12f * w), style = st)
+                drawRoundRect(color, Offset(.42f * w, .38f * w), Size(.52f * w, .24f * w), CornerRadius(.12f * w), style = st)
+            }
+            "numbered" -> {
+                fun p(x: Float, y: Float) = Offset(x / 24f * w, y / 24f * w)
+                line(.46f, 7f / 24f, .88f, 7f / 24f); line(.46f, .5f, .88f, .5f); line(.46f, 17f / 24f, .88f, 17f / 24f)
+                val one = Path().apply { moveTo(p(4f, 5.5f).x, p(4f, 5.5f).y); lineTo(p(5.5f, 4.5f).x, p(5.5f, 4.5f).y); lineTo(p(5.5f, 9.5f).x, p(5.5f, 9.5f).y) }
+                drawPath(one, color, style = st)
+                val two = Path().apply {
+                    moveTo(p(3.8f, 13.7f).x, p(3.8f, 13.7f).y)
+                    cubicTo(p(4.4f, 12.7f).x, p(4.4f, 12.7f).y, p(6.4f, 12.8f).x, p(6.4f, 12.8f).y, p(6.3f, 14.3f).x, p(6.3f, 14.3f).y)
+                    cubicTo(p(6.2f, 15.2f).x, p(6.2f, 15.2f).y, p(5f, 15.8f).x, p(5f, 15.8f).y, p(3.8f, 17.3f).x, p(3.8f, 17.3f).y)
+                    lineTo(p(6.5f, 17.3f).x, p(6.5f, 17.3f).y)
+                }
+                drawPath(two, color, style = st)
             }
             "edit" -> {
                 drawRoundRect(color, Offset(.14f * w, .22f * w), Size(.6f * w, .64f * w), CornerRadius(.1f * w), style = st)

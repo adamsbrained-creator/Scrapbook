@@ -16,6 +16,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -69,18 +74,23 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     val shelf = shelves.firstOrNull { it.name == name }
     val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }; var styleSheet by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }; var inboxSheet by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }; var creatingSub by remember { mutableStateOf(false) }; var deletingSub by remember { mutableStateOf<String?>(null) }
+    var deletingScrap by remember { mutableStateOf<Item?>(null) }; val deleted by vm.deleted.collectAsState(); val snack = remember { SnackbarHostState() }
     var q by remember { mutableStateOf("") }; var kind by remember { mutableStateOf<Kind?>(null) }
     var kindMenu by remember { mutableStateOf(false) }; var sortMenu by remember { mutableStateOf(false) }; var more by remember { mutableStateOf(false) }
     var byTitle by rememberSaveable { mutableStateOf(false) }; var grid by rememberSaveable { mutableStateOf(true) }
     LaunchedEffect(shelf) { if (shelf != null) existed = true else if (existed) nav.popBackStack() }
+    LaunchedEffect(deleted) {
+        if (deleted != null) { val r = snack.showSnackbar("Scrap deleted", "Undo", duration = SnackbarDuration.Long); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
+    }
+    val subs = if (shelf != null) shelves.childrenOf(name) else emptyList()
     val inShelf = all.filter { name == "All" || (name == "Pinned" && it.pinned) || (name == "Recent" && it.savedAt > System.currentTimeMillis() - 7L * 86_400_000L) || it.collection == name }
     val shown = inShelf.filter { n -> (kind == null || n.kind == kind) && (q.isBlank() || listOf(n.title, n.body, n.tags.joinToString(" ")).any { it.contains(q, true) }) }
         .let { l -> if (byTitle) l.sortedBy { it.title.lowercase() } else l.sortedByDescending { it.savedAt } }
         .sortedByDescending { it.pinned }
 
     Box(Modifier.fillMaxSize()) {
-        Scaffold(containerColor = t.paper) { pad ->
+        Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) { d -> SwipeAway({ d.dismiss() }) { Snackbar(d, shape = RoundedCornerShape(20.dp), containerColor = Sb.ink, contentColor = Sb.card, actionColor = t.acc) } } }) { pad ->
             Box(Modifier.fillMaxSize().padding(pad)) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
@@ -90,6 +100,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             Box {
                                 Box(Modifier.size(48.dp).tap("More options") { more = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
                                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                                    if (shelf != null) DropdownMenuItem(text = { Text("New box inside") }, onClick = { more = false; creatingSub = true })
                                     if (shelf != null) DropdownMenuItem(text = { Text("Edit box") }, onClick = { more = false; editing = true })
                                     if (name == "Inbox") DropdownMenuItem(text = { Text("Change color") }, onClick = { more = false; inboxSheet = true })
                                     if (shelf != null || name == "Inbox") DropdownMenuItem(text = { Text(if (name == "Inbox") "Remove Inbox" else "Delete box") }, onClick = { more = false; deleting = true })
@@ -104,11 +115,23 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                                 Text(name, fontFamily = headFont(), fontWeight = FontWeight.Medium, fontSize = 36.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
                                 Text("  " + (if (inShelf.size == 1) "1 scrap" else "${inShelf.size} scraps"), fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 7.dp))
                             }
+                            if (shelf != null && shelf.parent.isNotBlank()) Text("in ${shelf.parent}", fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(top = 2.dp))
                             if (shelf != null && shelf.description.isNotBlank()) Text(shelf.description, fontSize = 14.sp, color = Sb.mute, modifier = Modifier.padding(top = 4.dp))
                         }
                     }
                     if (shelf?.coverUri != null) item {
                         ItemImage(Item(title = "", body = "", kind = Kind.Image, collection = "", imageUri = shelf.coverUri, color = shelf.color), Modifier.fillMaxWidth().height(120.dp), 24.dp)
+                    }
+                    if (shelf != null) item {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            subs.chunked(4).forEach { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    row.forEach { s -> TileBox(s.name, all.count { n -> n.collection == s.name }, TAB_COLORS[s.color % TAB_COLORS.size], Modifier.weight(1f), { deletingSub = s.name }) { nav.navigate("shelf/${s.name}") } }
+                                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                                }
+                            }
+                            Text("＋ New box inside", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("New box inside $name") { creatingSub = true })
+                        }
                     }
                     item {
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .55f)).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -147,10 +170,10 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                     if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else "Nothing here yet. Tap New scrap to add the first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
                     else if (grid) items(shown.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            pair.forEach { NoteTile(it, nav, Modifier.weight(1f)) }
+                            pair.forEach { n -> NoteTile(n, nav, Modifier.weight(1f)) { deletingScrap = n } }
                             if (pair.size == 1) Spacer(Modifier.weight(1f))
                         }
-                    } else items(shown, key = { it.id }) { NoteRow(it, nav) }
+                    } else items(shown, key = { it.id }) { n -> NoteRow(n, nav) { deletingScrap = n } }
                 }
                 val addScrap = { vm.pendingShelf = if (shelf != null) name else null; nav.navigate("edit/0") }
                 if (navStyle == 1) BottomNav(Modifier.align(Alignment.BottomEnd), { menuSheet = true }, addScrap)
@@ -158,6 +181,9 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
             }
         }
         if (editing && shelf != null) ShelfSheet(vm, shelf) { editing = false }
+        if (creatingSub && shelf != null) ShelfSheet(vm, null, { creatingSub = false }, parent = name)
+        deletingSub?.let { n -> DeleteBoxSheet(n, vm, { deletingSub = null }) }
+        deletingScrap?.let { n -> DeleteScrapSheet(n, vm) { deletingScrap = null } }
         if (inboxSheet) InboxSheet(vm) { inboxSheet = false }
         if (deleting) DeleteBoxSheet(name, vm, { deleting = false }) { if (name == "Inbox") nav.popBackStack() }
         if (menuSheet) MenuSheet(nav, { menuSheet = false }, { styleSheet = true }) { vm.pendingShelf = null }

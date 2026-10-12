@@ -16,6 +16,7 @@ class ShareTest {
     @Test fun differentTitleKeepsBody() = assertEquals("Hello", bodyWithoutTitle("Hi", "Hello"))
     @Test fun inlineMarksAreStripped() = assertEquals("Bold and it x m", plainPreview("**Bold** and *it* ~~x~~ ==m=="))
     @Test fun numberedItemsLoseTheirNumber() = assertEquals("First", plainPreview("1. First"))
+    @Test fun linksKeepOnlyTheirText() = assertEquals("see docs now", plainPreview("see [docs](https://example.com/a) now"))
     @Test fun kinds() {
         assertEquals(Kind.Link, classifyShare("https://a.b/c", false))
         assertEquals(Kind.Quote, classifyShare("“Hello”", false))
