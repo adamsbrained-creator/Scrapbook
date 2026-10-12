@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -125,8 +125,18 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                     drawRoundRect(color, Offset(u(r[0]), u(r[1])), Size(u(r[2]), u(r[3])), CornerRadius(u(2f)), style = st)
                 }
             }
+            "copy" -> {
+                fun u(v: Float) = v / 24f * w
+                drawRoundRect(color, Offset(u(9f), u(9f)), Size(u(11f), u(11f)), CornerRadius(u(2.4f)), style = st)
+                val back = Path().apply {
+                    moveTo(u(9f), u(15f)); lineTo(u(6.4f), u(15f)); quadraticBezierTo(u(4f), u(15f), u(4f), u(12.6f)); lineTo(u(4f), u(6.4f))
+                    quadraticBezierTo(u(4f), u(4f), u(6.4f), u(4f)); lineTo(u(12.6f), u(4f)); quadraticBezierTo(u(15f), u(4f), u(15f), u(6.4f)); lineTo(u(15f), u(9f))
+                }
+                drawPath(back, color, style = st)
+            }
             "quote" -> { line(.2f, .22f, .2f, .78f); line(.38f, .32f, .84f, .32f); line(.38f, .5f, .84f, .5f); line(.38f, .68f, .66f, .68f) }
             "divider" -> { line(.12f, .5f, .88f, .5f); line(.3f, .28f, .7f, .28f); line(.3f, .72f, .7f, .72f) }
+            "external" -> { line(.33f, .67f, .67f, .33f); line(.375f, .33f, .67f, .33f); line(.67f, .33f, .67f, .625f) }
             "info" -> { drawCircle(color, .38f * w, Offset(.5f * w, .5f * w), style = st); dot(.5f, .34f, .045f); line(.5f, .47f, .5f, .7f) }
         }
     }

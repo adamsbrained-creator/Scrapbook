@@ -1,6 +1,10 @@
 package app.scrapbook.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
@@ -61,26 +65,37 @@ private fun date(ms: Long) = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault(
 @Composable private fun Title(text: String, size: TextUnit = 26.sp, align: TextAlign = TextAlign.Start) =
     Text(text, fontFamily = LocalPage.current.family ?: headFont(), fontWeight = FontWeight.SemiBold, fontSize = size, lineHeight = size * 1.15f, textAlign = align, modifier = Modifier.semantics { heading() })
 private val NUM_LINE = Regex("^(\\d+)\\. ")
-private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|\\[([^\\]\\n]+)\\]\\((https?://[^)\\s]+)\\)|https?://[^\\s]+")
+private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|\\[([^\\]\\n]+)\\]\\(((?:https?|readest)://[^)\\s]+)\\)|https?://[^\\s]+")
 
 /** Inline formatting (bold, italic, strike, highlight), [text](url) links and tappable web links. */
 @Composable
 private fun linkify(text: String): AnnotatedString {
     val acc = LocalSb.current.acc
-    return buildAnnotatedString { appendRich(text, acc) }
+    val ctx = LocalContext.current
+    return buildAnnotatedString { appendRich(text, acc) { openAppLink(ctx, it) } }
 }
 
-private fun AnnotatedString.Builder.appendRich(text: String, acc: Color) {
+/** Opens a link that belongs to another app (a readest:// link opens Paperback). Says so instead of crashing when that app is not installed. */
+private fun openAppLink(ctx: Context, url: String) {
+    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    catch (e: ActivityNotFoundException) { Toast.makeText(ctx, "Paperback isn't installed on this phone", Toast.LENGTH_SHORT).show() }
+}
+
+private fun AnnotatedString.Builder.appendRich(text: String, acc: Color, openApp: (String) -> Unit) {
     var i = 0
     for (m in RICH.findAll(text)) {
         append(text.substring(i, m.range.first))
         val g = m.groupValues
         when {
-            g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendRich(g[1], acc) }
-            g[2].isNotEmpty() -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendRich(g[2], acc) }
-            g[3].isNotEmpty() -> withStyle(SpanStyle(background = acc.copy(alpha = .3f))) { appendRich(g[3], acc) }
-            g[4].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendRich(g[4], acc) }
-            g[5].isNotEmpty() -> withLink(LinkAnnotation.Url(g[6], TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(g[5]) }
+            g[1].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { appendRich(g[1], acc, openApp) }
+            g[2].isNotEmpty() -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendRich(g[2], acc, openApp) }
+            g[3].isNotEmpty() -> withStyle(SpanStyle(background = acc.copy(alpha = .3f))) { appendRich(g[3], acc, openApp) }
+            g[4].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendRich(g[4], acc, openApp) }
+            g[5].isNotEmpty() -> {
+                val style = TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline))
+                val link = if (g[6].startsWith("readest://")) LinkAnnotation.Clickable("app-link", style) { openApp(g[6]) } else LinkAnnotation.Url(g[6], style)
+                withLink(link) { append(g[5]) }
+            }
             else -> {
                 val raw = m.value; val url = raw.trimEnd('.', ',', ';', ':', '!', '?', ')', '"', '”', '\'')
                 withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline)))) { append(url) }

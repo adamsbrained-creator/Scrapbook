@@ -39,6 +39,9 @@ private val SORT_ASC = booleanPreferencesKey("sort_asc")
 private val BOX_STYLE = intPreferencesKey("box_style")
 private val SHOW_PREVIEW = booleanPreferencesKey("show_preview")
 private val SHOW_BOXES = booleanPreferencesKey("show_boxes")
+private val LAST_BOX = stringPreferencesKey("last_box")
+private val BOX_SEARCH = booleanPreferencesKey("box_search")
+private val REOPEN_LAST_BOX = booleanPreferencesKey("reopen_last_box")
 
 /** Something shared into the app from elsewhere, waiting to be saved. */
 data class Incoming(val text: String, val subject: String, val images: List<Uri>)
@@ -101,6 +104,25 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Whether the box tiles are shown on the main page. */
     val showBoxes: StateFlow<Boolean> = ds.data.map { it[SHOW_BOXES] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     fun setShowBoxes(b: Boolean) = edit { it[SHOW_BOXES] = b }
+    /** Whether the search bar is shown at the top of a box's screen. On by default. */
+    val showBoxSearch: StateFlow<Boolean> = ds.data.map { it[BOX_SEARCH] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    fun setShowBoxSearch(b: Boolean) = edit { it[BOX_SEARCH] = b }
+    /** Whether the app opens in the box you were last in, instead of the main page. On by default. */
+    val reopenLastBox: StateFlow<Boolean> = ds.data.map { it[REOPEN_LAST_BOX] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    fun setReopenLastBox(b: Boolean) = edit { it[REOPEN_LAST_BOX] = b }
+    suspend fun readReopenLastBox(): Boolean = ds.data.first()[REOPEN_LAST_BOX] ?: true
+    /** The box that was open when the app was last used. "" means the main page (or All scraps, Pinned and Recent, which are not boxes). */
+    suspend fun readLastBox(): String = ds.data.first()[LAST_BOX] ?: ""
+    fun setLastBox(name: String) = edit { it[LAST_BOX] = name }
+    /** The boxes to open, outermost first, to land in `name` with the same back stack as if you had tapped your way there. Empty if the box is gone. */
+    suspend fun boxPath(name: String): List<String> {
+        if (name == "Inbox") return if (ds.data.first()[INBOX_HIDDEN] ?: false) emptyList() else listOf("Inbox")
+        val all = dao.shelves().first()
+        if (all.none { it.name == name }) return emptyList()
+        val path = ArrayList<String>(); var cur = name
+        while (cur.isNotBlank() && path.size < 20 && cur !in path) { path.add(0, cur); cur = all.firstOrNull { it.name == cur }?.parent ?: "" }
+        return path
+    }
     fun setAccent(i: Int) = edit { it[ACC] = i }
     fun setSerif(b: Boolean) = edit { it[SERIF] = b }
     fun setRadius(dp: Int) = edit { it[RAD] = dp }

@@ -113,15 +113,26 @@ private fun AccentRow(current: String, onPick: (Int) -> Unit) {
     }
 }
 
-/** A row that opens something. value is shown in grey before the chevron. */
+/** A row that opens something. value is shown in grey before the icon, which is a chevron, or "external" for a link that leaves the app. */
 @Composable
-private fun NavRow(label: String, value: String = "", onClick: () -> Unit) {
+internal fun NavRow(label: String, value: String = "", icon: String = "chevron", onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().height(56.dp).tap(label, onClick).padding(start = 18.dp, end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 16.sp)
         if (value.isNotEmpty()) Text(value, fontSize = 15.sp, color = Sb.mute)
         Spacer(Modifier.width(8.dp))
-        Ic("chevron", 18.dp, Sb.mute)
+        Ic(icon, 18.dp, Sb.mute)
     }
+}
+
+/** A rounded grey card holding a group of rows. Put a RowDivider between rows. */
+@Composable
+internal fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Sb.card), content = content)
+}
+
+@Composable
+internal fun RowDivider() {
+    Box(Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(1.dp).background(Sb.line))
 }
 
 @Composable
@@ -158,6 +169,8 @@ fun SettingsScreen(vm: ArchiveViewModel, nav: NavController) {
     val mode by vm.darkMode.collectAsState(); val grey by vm.greyBg.collectAsState(); val headerSize by vm.headerSize.collectAsState()
     val defaultGrid by vm.defaultGrid.collectAsState(); val sortTitle by vm.sortTitle.collectAsState(); val sortAsc by vm.sortAsc.collectAsState()
     val boxStyle by vm.boxStyle.collectAsState(); val showPreview by vm.showPreview.collectAsState(); val showBoxes by vm.showBoxes.collectAsState()
+    val reopenLast by vm.reopenLastBox.collectAsState()
+    val boxSearch by vm.showBoxSearch.collectAsState()
     val headerLayout by vm.headerStyle.collectAsState(); val navMode by vm.navStyle.collectAsState(); val editorMode by vm.editorStyle.collectAsState()
     val shelves by vm.shelves.collectAsState()
     var msg by remember { mutableStateOf("") }
@@ -200,6 +213,8 @@ fun SettingsScreen(vm: ArchiveViewModel, nav: NavController) {
                 NavRow("Manage boxes", when (shelves.size) { 0 -> "No boxes"; 1 -> "1 box"; else -> "${shelves.size} boxes" }) { nav.navigate("collections") }
             },
             Setting("Show boxes on home", "tiles collections hide") { ToggleRow("Show boxes on home", showBoxes) { vm.setShowBoxes(it) } },
+            Setting("Show search in boxes", "search bar field find hide clean") { ToggleRow("Show search in boxes", boxSearch) { vm.setShowBoxSearch(it) } },
+            Setting("Open last box on launch", "start startup reopen remember resume folder") { ToggleRow("Open last box on launch", reopenLast) { vm.setReopenLastBox(it) } },
         )),
         SettingGroup("More style", listOf(
             Setting("Headings", "font serif sans type") { SegRow("Headings", listOf("Serif", "Sans"), if (t.serif) 0 else 1) { vm.setSerif(it == 0) } },
@@ -250,9 +265,9 @@ fun SettingsScreen(vm: ArchiveViewModel, nav: NavController) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     visible.forEachIndexed { gi, (g, items) ->
                         Text(g.title, Modifier.padding(start = 24.dp, end = 24.dp, top = if (gi == 0) 22.dp else 26.dp, bottom = 8.dp), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Sb.mute)
-                        Column(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Sb.card)) {
+                        GroupCard {
                             items.forEachIndexed { ii, s ->
-                                if (ii > 0) Box(Modifier.padding(horizontal = 18.dp).fillMaxWidth().height(1.dp).background(Sb.line))
+                                if (ii > 0) RowDivider()
                                 s.content()
                             }
                         }

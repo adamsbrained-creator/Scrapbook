@@ -6,7 +6,15 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,11 +84,26 @@ fun Field(v: String, onChange: (String) -> Unit, hint: String, size: TextUnit, f
         decorationBox = { inner -> Box { if (v.isEmpty()) Text(hint, color = Sb.mute, fontSize = size, fontFamily = font, fontWeight = weight); inner() } })
 }
 
-/** Styles formatting lines as you type (text and cursor positions are unchanged). */
-private fun mdTransform(acc: Color) = VisualTransformation { text ->
-    val a = buildAnnotatedString {
-        append(text.text); var i = 0
-        text.text.split("\n").forEach { line ->
+/** What the editor shows for the raw text: the marks hidden, plus the maps between shown and saved positions. */
+private class MdView(val source: String, val out: TransformedText, val o2t: IntArray, private val lo: IntArray, private val hi: IntArray) {
+    /** Saved offset for the start of a range: after any hidden opening marks. */
+    fun start(t: Int) = hi[t.coerceIn(0, hi.lastIndex)]
+    /** Saved offset for the end of a range: before any hidden closing marks. */
+    fun end(t: Int) = lo[t.coerceIn(0, lo.lastIndex)]
+}
+
+private const val DIVIDER_GLYPHS = "────────────────"
+
+/**
+ * Styles the text as you type and hides the markdown marks. Line prefixes (# , ## , > ) are always hidden, bullets and
+ * checkboxes are drawn as • ☐ ☑, and inline marks (** ~~ == * and the [ ](url) of a link) disappear until the cursor
+ * touches that piece of text. The saved text is never changed; the returned maps translate between saved and shown positions.
+ */
+private fun mdRender(text: String, sel: TextRange?, acc: Color): MdView {
+    val n = text.length
+    val styled = buildAnnotatedString {
+        append(text); var i = 0
+        text.split("\n").forEach { line ->
             val st: SpanStyle? = when {
                 line.startsWith("## ") -> SpanStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 line.startsWith("# ") -> SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold)
@@ -97,7 +120,117 @@ private fun mdTransform(acc: Color) = VisualTransformation { text ->
             i += line.length + 1
         }
     }
-    TransformedText(a, OffsetMapping.Identity)
+
+    // Which saved characters are hidden or swapped for a glyph.
+    val hide = BooleanArray(n); val closing = BooleanArray(n); val repl = arrayOfNulls<Pair<Int, String>>(n)
+    val selA = sel?.let { minOf(it.start, it.end) } ?: 0; val selB = sel?.let { maxOf(it.start, it.end) } ?: 0
+    fun touches(from: Int, to: Int) = sel != null && selA <= to && selB >= from
+    fun hideRun(from: Int, to: Int, isClosing: Boolean) { for (k in from until minOf(to, n)) { hide[k] = true; closing[k] = isClosing } }
+    fun inline(s: String, off: Int) {
+        for (m in INLINE.findAll(s)) {
+            val g = m.groupValues; val s0 = off + m.range.first; val e0 = off + m.range.last + 1
+            val mk = if (g[4].isNotEmpty()) 1 else 2; val inner = innerOf(g)
+            // "2 * 3 * 4" is not italic: a single * next to a space stays visible.
+            val spaced = g[4].isNotEmpty() && (inner.first().isWhitespace() || inner.last().isWhitespace())
+            if (!spaced && !touches(s0, e0)) { hideRun(s0, s0 + mk, false); hideRun(e0 - mk, e0, true) }
+            inline(inner, s0 + mk)
+        }
+    }
+    var i = 0
+    for (line in text.split("\n")) {
+        val le = i + line.length
+        when {
+            line.startsWith("## ") -> if (line.length > 3) hideRun(i, i + 3, false)
+            line.startsWith("# ") -> if (line.length > 2) hideRun(i, i + 2, false)
+            line.startsWith("> ") -> if (line.length > 2) hideRun(i, i + 2, false)
+            line.startsWith("- [ ] ") -> repl[i] = 5 to "☐"
+            line.startsWith("- [x] ") -> repl[i] = 5 to "☑"
+            line.startsWith("- ") -> repl[i] = 1 to "•"
+            line == "---" && !touches(i, le) -> repl[i] = 3 to DIVIDER_GLYPHS
+        }
+        inline(line, i)
+        for (m in LINK.findAll(line)) {
+            val s0 = i + m.range.first; val e0 = i + m.range.last + 1
+            if (!touches(s0, e0)) { hideRun(s0, s0 + 1, false); hideRun(s0 + 1 + m.groupValues[1].length, e0, true) }
+        }
+        i = le + 1
+    }
+
+    // Shown text, and where every saved offset lands in it.
+    val shown = StringBuilder(); val o2t = IntArray(n + 1)
+    var k = 0
+    while (k < n) {
+        val r = repl[k]
+        if (r != null) {
+            o2t[k] = shown.length; shown.append(r.second)
+            for (j in 1 until r.first) o2t[k + j] = shown.length
+            k += r.first
+        } else {
+            o2t[k] = shown.length
+            if (!hide[k]) shown.append(text[k])
+            k++
+        }
+    }
+    o2t[n] = shown.length
+    val m = shown.length
+    // Back again: several saved offsets can share one shown offset (next to hidden marks). Opening marks put the cursor
+    // after them (inside the formatting), closing marks before them.
+    val lo = IntArray(m + 1) { Int.MAX_VALUE }; val hi = IntArray(m + 1) { -1 }; val allOpen = BooleanArray(m + 1) { true }
+    for (j in 0..n) { val t = o2t[j]; if (j < lo[t]) lo[t] = j; if (j > hi[t]) hi[t] = j }
+    for (j in 0 until n) if (hide[j] && closing[j]) allOpen[o2t[j]] = false
+    for (t in 1..m) if (hi[t] < 0) { lo[t] = lo[t - 1]; hi[t] = hi[t - 1] }
+    val pick = IntArray(m + 1) { if (allOpen[it]) hi[it] else lo[it] }
+
+    val shownText = buildAnnotatedString {
+        append(shown.toString())
+        for (r in styled.spanStyles) {
+            val s = o2t[r.start.coerceIn(0, n)]; val e = o2t[r.end.coerceIn(0, n)]
+            if (e > s) addStyle(r.item, s, e)
+        }
+    }
+    val map = object : OffsetMapping {
+        override fun originalToTransformed(offset: Int) = o2t[offset.coerceIn(0, n)]
+        override fun transformedToOriginal(offset: Int) = pick[offset.coerceIn(0, m)]
+    }
+    return MdView(text, TransformedText(shownText, map), o2t, lo, hi)
+}
+
+private val CHECK_LINE = Regex("(?m)^- \\[[ x]\\] ")
+
+/** The saved offset of the line start whose ☐/☑ is under the finger, or null. */
+private fun checkboxAt(lay: TextLayoutResult, v: MdView, text: String, p: Offset, pad: Float): Int? {
+    for (m in CHECK_LINE.findAll(text)) {
+        val t = v.o2t[m.range.first.coerceIn(0, v.o2t.lastIndex)]
+        if (t >= lay.layoutInput.text.length) continue
+        val box = lay.getBoundingBox(t)
+        if (p.x >= box.left - pad && p.x <= box.right + pad && p.y >= box.top && p.y <= box.bottom) return m.range.first
+    }
+    return null
+}
+
+private val PASTED_URL = Regex("^https?://\\S+$")
+
+/**
+ * Smart edits on top of plain typing: pasting a web address over selected text makes it a link, and backspace at the
+ * start of a list, heading or quote removes the whole (hidden) mark in one go.
+ */
+private fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
+    val os = old.selection; val a = minOf(os.start, os.end); val b = maxOf(os.start, os.end)
+    if (a != b && new.selection.collapsed) {
+        val ins = new.text.length - (old.text.length - (b - a))
+        if (ins > 0 && new.selection.start == a + ins && new.text.startsWith(old.text.substring(0, a)) && new.text.endsWith(old.text.substring(b))) {
+            val pasted = new.text.substring(a, a + ins); val label = old.text.substring(a, b)
+            if (PASTED_URL.matches(pasted) && label.none { it == '\n' || it == '[' || it == ']' })
+                return new.copy(text = old.text.substring(0, a) + "[$label]($pasted)" + old.text.substring(b), selection = TextRange(a + 1, a + 1 + label.length))
+        }
+    }
+    if (os.collapsed && new.text.length == old.text.length - 1 && new.selection.collapsed && new.selection.start == os.start - 1) {
+        val s = old.text; val pos = os.start
+        val ls = s.lastIndexOf('\n', pos - 1) + 1; val le = s.indexOf('\n', ls).let { if (it < 0) s.length else it }
+        val prefix = LINE_PREFIXES.firstOrNull { s.substring(ls, le).startsWith(it) }
+        if (prefix != null && pos == ls + prefix.length) return new.copy(text = s.removeRange(ls, ls + prefix.length), selection = TextRange(ls))
+    }
+    return new
 }
 
 private val NUM = Regex("^(\\d+)\\. ")
@@ -245,7 +378,7 @@ private fun continueList(old: TextFieldValue, new: TextFieldValue): TextFieldVal
     return new.copy(text = s.substring(0, nl + 1) + cont + s.substring(nl + 1), selection = TextRange(nl + 1 + cont.length))
 }
 
-private val BUBBLE_W = 208.dp
+private val BUBBLE_W = 248.dp
 private val BUBBLE_H = 48.dp
 
 @Composable
@@ -254,15 +387,17 @@ private fun BubbleBtn(on: Boolean, desc: String, enabled: Boolean = true, onClic
         .alpha(if (enabled) 1f else .35f).semantics { selected = on }.tap(desc) { if (enabled) onClick() }, Alignment.Center) { content() }
 }
 
-/** The small dark bubble under the selected text: bold, italic, strikethrough, highlight and link. It flips above the text near the bottom edge. */
+/** The small dark bubble under the selected text: bold, italic, strikethrough, highlight, link and copy. It flips above the text near the bottom edge. */
 @Composable
-private fun SelectionBubble(value: TextFieldValue, layout: TextLayoutResult, fieldTop: Float, scrollY: Int, viewportH: Int, onInline: (String) -> Unit, onLink: () -> Unit) {
+private fun SelectionBubble(value: TextFieldValue, layout: TextLayoutResult, map: OffsetMapping, fieldTop: Float, scrollY: Int, viewportH: Int, onInline: (String) -> Unit, onLink: () -> Unit, onCopy: () -> Unit) {
     val t = LocalSb.current; val d = LocalDensity.current
-    val n = layout.layoutInput.text.length
+    val n = value.text.length; val tn = layout.layoutInput.text.length
     val a = minOf(value.selection.start, value.selection.end).coerceIn(0, n); val b = maxOf(value.selection.start, value.selection.end).coerceIn(0, n)
     if (a == b) return
-    val ra = layout.getCursorRect(a); val rb = layout.getCursorRect(b)
-    val sameLine = layout.getLineForOffset(a) == layout.getLineForOffset(b)
+    // The layout is of the shown text (marks hidden), so saved offsets are translated first.
+    val ta = map.originalToTransformed(a).coerceIn(0, tn); val tb = map.originalToTransformed(b).coerceIn(0, tn)
+    val ra = layout.getCursorRect(ta); val rb = layout.getCursorRect(tb)
+    val sameLine = layout.getLineForOffset(ta) == layout.getLineForOffset(tb)
     val w = with(d) { BUBBLE_W.toPx() }; val h = with(d) { BUBBLE_H.toPx() }
     val centerX = if (sameLine) (ra.left + rb.left) / 2f else layout.size.width / 2f
     val left = (centerX - w / 2f).coerceIn(0f, maxOf(0f, layout.size.width - w))
@@ -282,6 +417,7 @@ private fun SelectionBubble(value: TextFieldValue, layout: TextLayoutResult, fie
                 Text("ab", color = Color(0xFF161616), fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(mark).padding(horizontal = 5.dp, vertical = 1.dp))
             }
             BubbleBtn(value.link() != null, "Add link", enabled = canLink, onClick = onLink) { Ic("link", 20.dp, Sb.card) }
+            BubbleBtn(false, "Copy", onClick = onCopy) { Ic("copy", 20.dp, Sb.card) }
         }
     }
 }
@@ -308,11 +444,10 @@ private fun RowScope.BarCell(on: Boolean, desc: String, holdLabel: String? = nul
 
 private fun headingLabel(prefix: String?) = when (prefix) { "# " -> "H1"; "## " -> "H2"; else -> "H" }
 
-/** Editor A, the default: a round + button (quote, divider), headings, lists, image and undo. Inline formatting is in the selection bubble. */
+/** Editor A, the default: a round + button (quote, divider), headings, lists and undo. Inline formatting is in the selection bubble. */
 @Composable
 private fun BubbleBar(prefix: String?, canUndo: Boolean, canRedo: Boolean, onQuote: () -> Unit, onDivider: () -> Unit, onHeading: () -> Unit,
-                      onBullet: () -> Unit, onNumber: () -> Unit, onCheck: () -> Unit, onImage: () -> Unit, onUndo: () -> Unit, onRedo: () -> Unit) {
-    val t = LocalSb.current
+                      onBullet: () -> Unit, onNumber: () -> Unit, onCheck: () -> Unit, onUndo: () -> Unit, onRedo: () -> Unit) {
     Bar(floating = false) {
         var menu by remember { mutableStateOf(false) }
         Box {
@@ -326,7 +461,6 @@ private fun BubbleBar(prefix: String?, canUndo: Boolean, canRedo: Boolean, onQuo
         BarCell(prefix == "- ", "Bullet list", onClick = onBullet) { c -> Ic("list", 22.dp, c) }
         BarCell(prefix == "1. ", "Numbered list", onClick = onNumber) { c -> Ic("numbered", 22.dp, c) }
         BarCell(prefix == "- [ ] " || prefix == "- [x] ", "Checklist", onClick = onCheck) { c -> Ic("check", 22.dp, c) }
-        BarCell(false, "Add image", onClick = onImage) { _ -> Ic("image", 22.dp, t.acc) }
         BarCell(false, "Undo", "Redo", onRedo, onUndo) { c -> Ic("undo", 22.dp, if (canUndo) c else if (canRedo) Sb.mute else Sb.mute.copy(alpha = .4f)) }
     }
 }
@@ -412,10 +546,14 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val undo = remember { ArrayDeque<TextFieldValue>() }; val redo = remember { ArrayDeque<TextFieldValue>() }
     var lastPush by remember { mutableLongStateOf(0L) }
     val lock = remember { Mutex() }; var leaving by remember { mutableStateOf(false) }
-    val md = remember(t.acc) { mdTransform(t.acc) }
     val editorStyle by vm.editorStyle.collectAsState()
     val scroll = rememberScrollState(); var viewportH by remember { mutableIntStateOf(0) }; var fieldTop by remember { mutableFloatStateOf(0f) }
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }; var focused by remember { mutableStateOf(false) }
+    val activeSel = if (focused) body.selection else null
+    val view = remember(body.text, activeSel, t.acc, Sb.ink) { mdRender(body.text, activeSel, t.acc) }
+    val viewNow by rememberUpdatedState(view)
+    val md = remember(view) { VisualTransformation { s -> if (s.text == view.source) view.out else mdRender(s.text, null, t.acc).out } }
+    val clipboard = LocalClipboardManager.current
     var linkSheet by remember { mutableStateOf<TextRange?>(null) }; var linkUrl by remember { mutableStateOf("") }
     val live = list.firstOrNull { it.id == curId }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> uris.forEach { u -> vm.importImage(u) { imgs = imgs + it } } }
@@ -427,13 +565,39 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
 
     /** Every body change goes through here so undo and redo see it. Quick typing is grouped into one step. */
     fun edit(new: TextFieldValue) {
-        val next = continueList(body, new)
+        val next = continueList(body, smartEdit(body, new))
         if (next.text != body.text) {
             val now = System.currentTimeMillis()
             if (now - lastPush > 700 || undo.isEmpty()) { undo.addLast(body); if (undo.size > 100) undo.removeFirst() }
             lastPush = now; redo.clear()
         }
         body = next
+    }
+
+    /** Ticks or unticks the checklist line that starts at saved offset ls. */
+    fun toggleCheck(ls: Int) {
+        val s = body.text; if (ls + 4 > s.length) return
+        edit(body.copy(text = s.replaceRange(ls + 3, ls + 4, if (s[ls + 3] == 'x') " " else "x")))
+    }
+    /** Double tap selects the word, triple tap the line, four taps everything. */
+    fun selectByTaps(pos: Offset, taps: Int) {
+        val lay = textLayout ?: return; val s = body.text; if (s.isEmpty()) return
+        val t = lay.getOffsetForPosition(pos).coerceIn(0, lay.layoutInput.text.length)
+        val range = when {
+            taps >= 4 -> TextRange(0, s.length)
+            taps == 3 -> {
+                val o = viewNow.end(t).coerceIn(0, s.length)
+                val ls = s.lastIndexOf('\n', o - 1) + 1; val le = s.indexOf('\n', o).let { if (it < 0) s.length else it }
+                val line = s.substring(ls, le)
+                val pre = (LINE_PREFIXES.firstOrNull { line.startsWith(it) } ?: NUM.find(line)?.value)?.length ?: 0
+                TextRange(minOf(ls + pre, le), le)
+            }
+            else -> {
+                val w = lay.getWordBoundary(t); val x = viewNow.start(w.start).coerceIn(0, s.length); val y = viewNow.end(w.end).coerceIn(0, s.length)
+                TextRange(minOf(x, y), maxOf(x, y))
+            }
+        }
+        if (!range.collapsed) body = body.copy(selection = range)
     }
 
     fun draft(): Item? {
@@ -490,7 +654,33 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                         imgs.forEachIndexed { i, u -> Polaroid(u, kind, i) { imgs = imgs - u } }
                     }
                 }
-                Box(Modifier.fillMaxWidth().onGloballyPositioned { fieldTop = it.positionInParent().y }) {
+                Box(Modifier.fillMaxWidth().onGloballyPositioned { fieldTop = it.positionInParent().y }
+                    .pointerInput(id) {
+                        // Tapping a ☐ / ☑ ticks it without moving the cursor or opening the keyboard.
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            val lay = textLayout
+                            val hit = if (lay != null) checkboxAt(lay, viewNow, body.text, down.position, 8.dp.toPx()) else null
+                            if (hit != null) {
+                                down.consume()
+                                val up = waitForUpOrCancellation(PointerEventPass.Initial)
+                                if (up != null && (up.position - down.position).getDistance() < viewConfiguration.touchSlop) { up.consume(); toggleCheck(hit) }
+                            }
+                        }
+                    }
+                    .pointerInput(id) {
+                        // Counts quick taps in the same spot. The text field handles the first two; this makes sure 2, 3 and 4 taps always select.
+                        var taps = 0; var lastUp = 0L; var lastPos = Offset.Zero
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                            val up = waitForUpOrCancellation(PointerEventPass.Initial)
+                            if (up == null || (up.position - down.position).getDistance() > viewConfiguration.touchSlop || up.uptimeMillis - down.uptimeMillis > 400) { taps = 0; return@awaitEachGesture }
+                            taps = if (up.uptimeMillis - lastUp < 350 && (up.position - lastPos).getDistance() < viewConfiguration.touchSlop * 3f) taps + 1 else 1
+                            lastUp = up.uptimeMillis; lastPos = up.position
+                            if (taps >= 2) { val p = up.position; val c = taps; scope.launch { delay(70); selectByTaps(p, c) } }
+                        }
+                    }) {
+
                     CompositionLocalProvider(LocalTextSelectionColors provides TextSelectionColors(handleColor = t.acc, backgroundColor = t.acc.copy(alpha = .3f))) {
                         BasicTextField(body, { edit(it) }, Modifier.fillMaxWidth().heightIn(min = 320.dp).onFocusChanged { focused = it.isFocused },
                             textStyle = TextStyle(fontSize = 17.sp, fontFamily = pageFont((live ?: existing)?.font ?: 0) ?: headFont(), color = Sb.ink, lineHeight = pageLine((live ?: existing)?.density ?: 1)),
@@ -499,7 +689,8 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                     }
                     val lay = textLayout
                     if (editorStyle == 0 && focused && !body.selection.collapsed && lay != null && linkSheet == null)
-                        SelectionBubble(body, lay, fieldTop, scroll.value, viewportH, { m -> edit(body.toggleInline(m)) }, { openLink() })
+                        SelectionBubble(body, lay, view.out.offsetMapping, fieldTop, scroll.value, viewportH, { m -> edit(body.toggleInline(m)) }, { openLink() },
+                            { val a = minOf(body.selection.start, body.selection.end).coerceIn(0, body.text.length); val b = maxOf(body.selection.start, body.selection.end).coerceIn(0, body.text.length); clipboard.setText(AnnotatedString(body.text.substring(a, b))) })
                 }
             }
             if (more) Column(Modifier.fillMaxWidth().background(Sb.card)) {
@@ -516,7 +707,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
             }
             if (editorStyle == 0) BubbleBar(body.linePrefix(), undo.isNotEmpty(), redo.isNotEmpty(),
                 { edit(body.toggleLine("> ")) }, { edit(body.insertDivider()) }, { edit(body.cycleHeading()) }, { edit(body.toggleLine("- ")) },
-                { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) }, { addImage() }, { doUndo() }, { doRedo() })
+                { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) }, { doUndo() }, { doRedo() })
             else PillBar(body, { m -> edit(body.toggleInline(m)) }, { edit(body.cycleHeading()) }, { edit(body.toggleLine("- ")) },
                 { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) })
         }
@@ -543,6 +734,10 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                 MenuDivider()
                 MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(live); nav.popBackStack("home", false) }
             }
+            MenuDivider()
+            val words = body.text.split(Regex("\\s+")).count { it.isNotBlank() }
+            Text("$words ${if (words == 1) "word" else "words"} · ${body.text.length} characters", color = Sb.mute, fontSize = 12.5.sp, fontFamily = LocalFonts.current.second,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 8.dp))
         }
     }
     linkSheet?.let { sel ->

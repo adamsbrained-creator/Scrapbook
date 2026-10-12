@@ -72,7 +72,7 @@ fun Sticky(item: Item, onClick: () -> Unit) {
 fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     val shelf = shelves.firstOrNull { it.name == name }
-    val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }
+    val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }; val showSearch by vm.showBoxSearch.collectAsState()
     var editing by remember { mutableStateOf(false) }; var inboxSheet by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }; var creatingSub by remember { mutableStateOf(false) }; var deletingSub by remember { mutableStateOf<String?>(null) }
     var deletingScrap by remember { mutableStateOf<Item?>(null) }; val deleted by vm.deleted.collectAsState(); val snack = remember { SnackbarHostState() }
@@ -85,7 +85,8 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     }
     val subs = if (shelf != null) shelves.childrenOf(name) else emptyList()
     val inShelf = all.filter { name == "All" || (name == "Pinned" && it.pinned) || (name == "Recent" && it.savedAt > System.currentTimeMillis() - 7L * 86_400_000L) || it.collection == name }
-    val shown = inShelf.filter { n -> (kind == null || n.kind == kind) && (q.isBlank() || listOf(n.title, n.body, n.tags.joinToString(" ")).any { it.contains(q, true) }) }
+    val query = if (showSearch) q else ""
+    val shown = inShelf.filter { n -> (kind == null || n.kind == kind) && (query.isBlank() || listOf(n.title, n.body, n.tags.joinToString(" ")).any { it.contains(query, true) }) }
         .let { l -> if (byTitle) l.sortedBy { it.title.lowercase() } else l.sortedByDescending { it.savedAt } }
         .sortedByDescending { it.pinned }
 
@@ -104,6 +105,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                                     if (shelf != null) DropdownMenuItem(text = { Text("Edit box") }, onClick = { more = false; editing = true })
                                     if (name == "Inbox") DropdownMenuItem(text = { Text("Change color") }, onClick = { more = false; inboxSheet = true })
                                     if (shelf != null || name == "Inbox") DropdownMenuItem(text = { Text(if (name == "Inbox") "Remove Inbox" else "Delete box") }, onClick = { more = false; deleting = true })
+                                    DropdownMenuItem(text = { Text(if (showSearch) "Hide search bar" else "Show search bar") }, onClick = { more = false; vm.setShowBoxSearch(!showSearch) })
                                     DropdownMenuItem(text = { Text("All boxes") }, onClick = { more = false; nav.navigate("collections") })
                                 }
                             }
@@ -130,7 +132,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             if (LocalBoxStyle.current != 4 && LocalBoxStyle.current != 6) Text("＋ New box inside", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("New box inside $name") { creatingSub = true })
                         }
                     }
-                    item {
+                    if (showSearch) item {
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .55f)).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Ic("search", 22.dp, Sb.mute); Spacer(Modifier.width(12.dp))
                             BasicTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = Sb.ink), cursorBrush = SolidColor(t.acc),
@@ -164,7 +166,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             }
                         }
                     }
-                    if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else (if (navStyle == 1) "Nothing here yet. Hold the menu button to add the first one." else "Nothing here yet. Tap New scrap to add the first one."), color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
+                    if (shown.isEmpty()) item { Text(if (query.isNotBlank() || kind != null) "Nothing matches." else (if (navStyle == 1) "Nothing here yet. Hold the menu button to add the first one." else "Nothing here yet. Tap New scrap to add the first one."), color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
                     else if (grid) items(shown.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             pair.forEach { n -> NoteTile(n, nav, Modifier.weight(1f)) { deletingScrap = n } }

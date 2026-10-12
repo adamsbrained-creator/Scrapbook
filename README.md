@@ -2,7 +2,7 @@
 
 A personal notes and archive app for Android: notes, quotes, links and photos with eight page layouts,
 collections, search, a Rediscover swipe, per-page styling, a Settings page (theme, white or soft grey background,
-accent, lists, boxes, backup/restore; seven box styles: Tabbed, Paper stack, Tinted tiles, Folder tabs, Chips, List rows, Notebook covers), a home-screen widget, and sharing into the app from other apps.
+accent, lists, boxes, backup/restore; seven box styles: Tabbed, Paper stack, Tinted tiles, Folder tabs, Chips, List rows, Notebook covers), an About page (version, What's new, feedback, licenses, and links to the other apps in the family), a home-screen widget, and sharing into the app from other apps. The app reopens in the box you were last in (switch off in Settings).
 
 ## Get it on your phone
 

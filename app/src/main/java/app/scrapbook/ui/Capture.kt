@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import app.scrapbook.*
 
+/** The box that things shared from Paperback go to. It is made the first time you save one. */
+private const val PAPERBACK_BOX = "Paperback"
+
 /** Opened when another app shares text, a link or images to Scrapbook. */
 @Composable
 fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
@@ -30,7 +33,8 @@ fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
     val initial = remember(src) { shareTitle(src.subject, src.text, hasImage) }
     var title by remember(src) { mutableStateOf(initial) }
     var body by remember(src) { mutableStateOf(src.text) }
-    var shelf by remember(src) { mutableStateOf("Inbox") }
+    val fromPaperback = "readest://" in src.text
+    var shelf by remember(src) { mutableStateOf(if (fromPaperback) PAPERBACK_BOX else "Inbox") }
     var img by remember(src) { mutableStateOf<String?>(null) }
     LaunchedEffect(src) { if (isUrl(src.text) && src.subject.isBlank()) vm.fetchTitle(src.text.trim()) { t2 -> if (title == initial) title = t2 } }
     LaunchedEffect(src) { src.images.firstOrNull()?.let { u -> vm.importImage(u) { p -> img = p } } }
@@ -44,6 +48,7 @@ fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
                 Text(if (ready) "Save" else "…", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 15.sp,
                     modifier = Modifier.padding(end = 8.dp).clip(RoundedCornerShape(22.dp)).background(if (ready) t.acc else Sb.mute).tap("Save") {
                         if (ready) {
+                            if (shelf == PAPERBACK_BOX && vm.shelves.value.none { it.name == PAPERBACK_BOX }) vm.saveShelf(Shelf(PAPERBACK_BOX, "Quotes and notes from my books.", 0))
                             val color = (System.currentTimeMillis() % 5).toInt() + 1
                             vm.save(Item(title = title.ifBlank { "Untitled" }, body = body, kind = kind, collection = shelf, imageUri = img, color = 0))
                             src.images.drop(1).forEach { u ->
@@ -69,6 +74,7 @@ fun CaptureScreen(vm: ArchiveViewModel, nav: NavController) {
                 Text("Box", fontSize = 13.sp, color = Sb.mute, modifier = Modifier.padding(bottom = 8.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()), Arrangement.spacedBy(6.dp)) {
                     Chip("Inbox", shelf == "Inbox") { shelf = "Inbox" }
+                    if (fromPaperback && vm.shelves.value.none { it.name == PAPERBACK_BOX }) Chip(PAPERBACK_BOX, shelf == PAPERBACK_BOX) { shelf = PAPERBACK_BOX }
                     vm.shelves.value.forEach { Chip(it.name, shelf == it.name) { shelf = it.name } }
                 }
             }

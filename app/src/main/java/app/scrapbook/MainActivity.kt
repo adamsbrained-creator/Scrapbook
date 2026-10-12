@@ -28,9 +28,12 @@ import java.io.File
 class MainActivity : ComponentActivity() {
     private val vm: ArchiveViewModel by viewModels()
     private val crashFile get() = File(filesDir, "crash.txt")
+    /** True when the app is starting from scratch. Not after a rotation or when Android restores the app, because the navigation state comes back by itself then. */
+    private var freshLaunch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        freshLaunch = savedInstanceState == null
         enableEdgeToEdge()
         if (savedInstanceState == null) handleShare(intent)
         setContent {
@@ -62,14 +65,39 @@ class MainActivity : ComponentActivity() {
                 val bars = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
             }
-            LaunchedEffect(incoming != null) { if (incoming != null) nav.navigate("capture") { launchSingleTop = true } }
+            // Like Samsung Notes reopening its last folder: a fresh launch opens the box you were in. Until that is decided (a few
+            // milliseconds to read the saved settings) a blank page is shown instead of flashing the main page first.
+            var ready by remember { mutableStateOf(!freshLaunch) }
+            var reopen by remember { mutableStateOf(emptyList<String>()) }
+            LaunchedEffect(Unit) {
+                if (!ready) {
+                    // Sharing something into the app always goes to the capture screen instead.
+                    if (incoming == null && vm.readReopenLastBox()) reopen = vm.boxPath(vm.readLastBox())
+                    ready = true
+                }
+            }
+            LaunchedEffect(ready) {
+                if (!ready) return@LaunchedEffect
+                // Open each box on the way (box, then the box inside it), so Back climbs up the same way it would have.
+                reopen.forEach { nav.navigate("shelf/$it") }
+                // From here on, remember the box on screen. The main page, All scraps, Pinned and Recent are not boxes: they clear it.
+                nav.currentBackStackEntryFlow.collect { e ->
+                    when (e.destination.route) {
+                        "home" -> vm.setLastBox("")
+                        "shelf/{name}" -> vm.setLastBox(e.arguments?.getString("name")?.takeUnless { it == "All" || it == "Pinned" || it == "Recent" } ?: "")
+                    }
+                }
+            }
+            LaunchedEffect(incoming != null, ready) { if (ready && incoming != null) nav.navigate("capture") { launchSingleTop = true } }
             Box(Modifier.fillMaxSize().background(LocalSb.current.paper), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 640.dp).fillMaxSize()) {
-                    CompositionLocalProvider(LocalShowPreview provides showPreview, LocalBoxStyle provides boxStyle) {
+                    if (ready) CompositionLocalProvider(LocalShowPreview provides showPreview, LocalBoxStyle provides boxStyle) {
                         NavHost(nav, "home") {
                             composable("home") { HomeScreen(vm, nav) }
                             composable("settings") { SettingsScreen(vm, nav) }
                             composable("about") { AboutScreen(nav) }
+                            composable("whatsnew") { WhatsNewScreen(nav) }
+                            composable("licenses") { LicensesScreen(nav) }
                             composable("capture") { CaptureScreen(vm, nav) }
                             composable("collections") { CollectionsScreen(vm, nav) }
                             composable("shelf/{name}", listOf(navArgument("name") { type = NavType.StringType })) {
