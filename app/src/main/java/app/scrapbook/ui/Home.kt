@@ -7,6 +7,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.draw.alpha
@@ -51,14 +67,28 @@ private fun TopBtn(kind: String, desc: String, onClick: () -> Unit) {
 
 @Composable
 fun SegIcon(kind: String, on: Boolean, onClick: () -> Unit) {
-    Box(Modifier.size(58.dp, 38.dp).clip(RoundedCornerShape(22.dp)).background(if (on) Sb.card else Color.Transparent).tap(kind, onClick), Alignment.Center) {
+    Box(Modifier.size(58.dp, 38.dp).clip(RoundedCornerShape(22.dp)).background(if (on) Sb.raised else Color.Transparent).tap(kind, onClick), Alignment.Center) {
         Ic(kind, 22.dp, if (on) Sb.ink else Sb.mute)
     }
 }
 
+/** A box tile for the two square looks: a card with a colored tab (default), or a card with two sheets peeking out behind it. The other Box styles are in BoxStyles.kt. */
 @Composable
 fun TileBox(name: String, count: Int, tab: Color, modifier: Modifier, onHold: () -> Unit, onClick: () -> Unit) {
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(Sb.card).tapOrHold(name, "Delete box", onHold, onClick)) {
+    val shape = RoundedCornerShape(22.dp)
+    if (LocalBoxStyle.current == 1) {
+        Box(modifier.aspectRatio(1f)) {
+            Box(Modifier.matchParentSize().padding(start = 6.dp, end = 2.dp, top = 2.dp, bottom = 6.dp).rotate(-4f).clip(shape).background(tab.copy(alpha = .45f)))
+            Box(Modifier.matchParentSize().padding(start = 2.dp, end = 6.dp, top = 6.dp, bottom = 2.dp).rotate(3f).clip(shape).background(Sb.line))
+            Box(Modifier.matchParentSize().padding(3.dp).clip(shape).background(Sb.card).tapOrHold(name, "Delete box", onHold, onClick)) {
+                Row(Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(tab)); Spacer(Modifier.width(6.dp))
+                    Text("$count", fontSize = 12.sp, color = Sb.mute)
+                }
+                Text(name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 12.dp, end = 4.dp))
+            }
+        }
+    } else Box(modifier.aspectRatio(1f).clip(shape).background(Sb.card).tapOrHold(name, "Delete box", onHold, onClick)) {
         Box(Modifier.align(Alignment.TopEnd).padding(end = 16.dp).width(32.dp).height(8.dp)
             .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)).background(tab))
         Text("$count", fontSize = 12.sp, color = Sb.mute, modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 22.dp))
@@ -82,7 +112,7 @@ private fun RowTitle(n: Item, size: TextUnit = 19.sp, lines: Int = 1) {
 /** One scrap in the list. It follows the scrap's page layout, so changing the layout changes how it looks here. Hold it to run onHold (delete). */
 @Composable
 fun NoteRow(n: Item, nav: NavController, onHold: () -> Unit = {}) {
-    val imgs = n.allImages(); val preview = plainPreview(bodyWithoutTitle(n.title, n.body))
+    val imgs = n.allImages(); val preview = if (LocalShowPreview.current) plainPreview(bodyWithoutTitle(n.title, n.body)) else ""
     val shape = RoundedCornerShape(28.dp); val tint = LocalSb.current.tint
     val open = { nav.navigate("edit/${n.id}") }
     val card = Modifier.fillMaxWidth().clip(shape).background(Sb.card).tapOrHold("Open ${n.title}", "Delete scrap", onHold, open).padding(20.dp)
@@ -123,7 +153,7 @@ fun NoteRow(n: Item, nav: NavController, onHold: () -> Unit = {}) {
         Layout.TwoColumn -> Column(card, Arrangement.spacedBy(6.dp)) {
             RowTitle(n)
             val w = preview.split(" ").filter { it.isNotBlank() }; val h = (w.size + 1) / 2
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            if (w.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(w.take(h).joinToString(" "), Modifier.weight(1f), fontSize = 13.sp, color = Sb.mute, maxLines = 4, overflow = TextOverflow.Ellipsis)
                 Text(w.drop(h).joinToString(" "), Modifier.weight(1f), fontSize = 13.sp, color = Sb.mute, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
@@ -269,35 +299,54 @@ private fun RoundTop(kind: String, desc: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MoreMenu(open: Boolean, onDismiss: () -> Unit, onRediscover: () -> Unit, onCollections: () -> Unit, onStyle: () -> Unit) {
+private fun MoreMenu(open: Boolean, onDismiss: () -> Unit, onRediscover: () -> Unit, onCollections: () -> Unit, onSettings: () -> Unit) {
     DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
         DropdownMenuItem(text = { Text("Rediscover") }, onClick = onRediscover)
         DropdownMenuItem(text = { Text("Boxes") }, onClick = onCollections)
-        DropdownMenuItem(text = { Text("App style and backup") }, onClick = onStyle)
+        DropdownMenuItem(text = { Text("Settings") }, onClick = onSettings)
     }
 }
 
-/** A pill row in the menu sheet. */
+/** A group of menu rows on one rounded card, the same grouping the Settings page uses. */
 @Composable
-private fun MenuRow(label: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(28.dp)).background(Sb.line.copy(alpha = .5f)).tap(label, onClick).padding(horizontal = 20.dp),
-        Arrangement.SpaceBetween, Alignment.CenterVertically) {
-        Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium); Ic("chevron", 18.dp, Sb.mute)
+private fun MenuGroup(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(Sb.line.copy(alpha = .5f)), content = content)
+}
+
+/** A row in a menu group: icon, label, chevron. The last row of a group has no divider under it. */
+@Composable
+private fun MenuRow(icon: String, label: String, last: Boolean = false, onClick: () -> Unit) {
+    Column {
+        Row(Modifier.fillMaxWidth().height(54.dp).tap(label, onClick).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Ic(icon, 24.dp, Sb.ink); Spacer(Modifier.width(14.dp))
+            Text(label, Modifier.weight(1f), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+            Ic("chevron", 18.dp, Sb.mute)
+        }
+        if (!last) Box(Modifier.padding(start = 56.dp, end = 18.dp).fillMaxWidth().height(1.dp).background(Sb.line))
     }
 }
 
-/** The menu: the places in the app, plus a big New scrap button. Opened from the menu button in the header or the bottom bar. */
+/**
+ * The menu: the places to browse, then Settings and About, plus a big New scrap button. Opened from the menu button in the header or the bottom bar.
+ * App style, backup and box management live on the Settings page now, so they are not repeated here.
+ */
 @Composable
-fun MenuSheet(nav: NavController, onClose: () -> Unit, onStyle: () -> Unit, onNew: () -> Unit) {
+fun MenuSheet(nav: NavController, onClose: () -> Unit, onNew: () -> Unit) {
     fun go(route: String) { onClose(); nav.navigate(route) }
     Sheet("scrapbook", onClose, doneLabel = "New scrap", primary = { onClose(); onNew(); nav.navigate("edit/0") }) {
-        MenuRow("All scraps") { go("shelf/All") }
-        MenuRow("Pinned") { go("shelf/Pinned") }
-        MenuRow("Recently edited") { go("shelf/Recent") }
-        MenuRow("Boxes") { go("collections") }
-        MenuRow("Rediscover") { go("rediscover") }
-        MenuRow("Search") { go("search") }
-        MenuRow("App style and backup") { onClose(); onStyle() }
+        MenuGroup {
+            MenuRow("list", "All scraps") { go("shelf/All") }
+            MenuRow("star", "Pinned") { go("shelf/Pinned") }
+            MenuRow("clock", "Recently edited", last = true) { go("shelf/Recent") }
+        }
+        MenuGroup {
+            MenuRow("sparkle", "Rediscover") { go("rediscover") }
+            MenuRow("search", "Search", last = true) { go("search") }
+        }
+        MenuGroup {
+            MenuRow("sliders", "Settings") { go("settings") }
+            MenuRow("info", "About", last = true) { go("about") }
+        }
     }
 }
 
@@ -310,12 +359,41 @@ fun NewScrapPill(modifier: Modifier, onClick: () -> Unit) {
     }
 }
 
-/** Bottom bar option: a round menu button and a round add button. */
+/**
+ * Bottom bar option, copied from Binder: one round menu button. Tap it for the menu. Hold it and the round + button pops out beside it
+ * (tap + to add a scrap). Tap anywhere else, or the menu button again, to put the + away. Place it with Modifier.matchParentSize() inside a Box.
+ */
 @Composable
 fun BottomNav(modifier: Modifier, onMenu: () -> Unit, onAdd: () -> Unit) {
-    Row(modifier.padding(end = 16.dp, bottom = 18.dp), Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
-        Box(Modifier.size(58.dp).shadow(6.dp, CircleShape).clip(CircleShape).background(Sb.card).tap("Menu", onMenu), Alignment.Center) { Ic("menu", 26.dp, Sb.ink) }
-        Box(Modifier.size(58.dp).shadow(8.dp, CircleShape).clip(CircleShape).background(Sb.ink).tap("New scrap", onAdd), Alignment.Center) { Ic("plus", 28.dp, Sb.card) }
+    var open by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    val pop by animateFloatAsState(if (open) 1f else 0f, spring(dampingRatio = .6f, stiffness = Spring.StiffnessMedium), label = "addPop")
+    val ring by animateDpAsState(if (open) 4.dp else 0.dp, tween(150), label = "menuRing")
+    val press by animateFloatAsState(if (open) .94f else 1f, tween(150), label = "menuPress")
+    val ringColor = Sb.line
+    Box(modifier) {
+        // While the + is out, a tap anywhere else only puts it away.
+        if (open) Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { open = false } })
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 18.dp)) {
+            Box(Modifier.align(Alignment.BottomEnd).offset(x = (-68).dp).size(58.dp)
+                .graphicsLayer { alpha = pop.coerceIn(0f, 1f); scaleX = .4f + .6f * pop; scaleY = .4f + .6f * pop; translationX = (1f - pop) * 36.dp.toPx() }
+                .clip(CircleShape).background(Sb.ink).border(1.dp, Sb.line, CircleShape)
+                .then(if (open) Modifier.tap("Add scrap") { open = false; onAdd() } else Modifier), Alignment.Center) { Ic("plus", 28.dp, Sb.card) }
+            Box(Modifier.align(Alignment.BottomEnd).size(58.dp)
+                .graphicsLayer { scaleX = press; scaleY = press }
+                .drawBehind { if (ring > 0.dp) drawCircle(ringColor, radius = size.minDimension / 2 + ring.toPx()) }
+                .clip(CircleShape).background(Sb.ink)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = { open = true; haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+                        onTap = { open = false; onMenu() })
+                }
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "Menu"; role = Role.Button
+                    onClick("Open menu") { open = false; onMenu(); true }
+                    onLongClick("Add scrap") { open = false; onAdd(); true }
+                }, Alignment.Center) { Ic("menu", 26.dp, Sb.card) }
+        }
     }
 }
 
@@ -326,8 +404,14 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
     val inboxColor by vm.inboxColor.collectAsState(); val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
     val snack = remember { SnackbarHostState() }
     val inboxHidden by vm.inboxHidden.collectAsState(); var deleting by remember { mutableStateOf<String?>(null) }; var deletingScrap by remember { mutableStateOf<Item?>(null) }
-    var style by remember { mutableStateOf(false) }; var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState(); var menu by remember { mutableStateOf(false) }
-    var grid by rememberSaveable { mutableStateOf(false) }; var byTitle by rememberSaveable { mutableStateOf(false) }; var asc by rememberSaveable { mutableStateOf(false) }
+    var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState(); var menu by remember { mutableStateOf(false) }
+    // List or grid starts as the Default view setting. Tapping the switch here only changes it until you leave the app.
+    val defaultGrid by vm.defaultGrid.collectAsState(); var gridTouched by rememberSaveable { mutableStateOf(false) }; var gridPick by rememberSaveable { mutableStateOf(false) }
+    val grid = if (gridTouched) gridPick else defaultGrid
+    // Sorting is saved, so the Sort by and Sort order settings and the sort controls on this page always agree.
+    val byTitle by vm.sortTitle.collectAsState(); val asc by vm.sortAsc.collectAsState()
+    val showBoxes by vm.showBoxes.collectAsState(); val headerSize by vm.headerSize.collectAsState()
+    val hs = listOf(.8f, 1f, 1.2f)[headerSize.coerceIn(0, 2)]
     LaunchedEffect(deleted) {
         if (deleted != null) { val r = snack.showSnackbar("Scrap deleted", "Undo", duration = SnackbarDuration.Long); if (r == SnackbarResult.ActionPerformed) vm.undoDelete() else vm.clearDeleted() }
     }
@@ -343,18 +427,18 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
                         val moreMenu: @Composable () -> Unit = {
-                            MoreMenu(menu, { menu = false }, { menu = false; nav.navigate("rediscover") }, { menu = false; nav.navigate("collections") }, { menu = false; style = true })
+                            MoreMenu(menu, { menu = false }, { menu = false; nav.navigate("rediscover") }, { menu = false; nav.navigate("collections") }, { menu = false; nav.navigate("settings") })
                         }
                         when (header) {
                             0 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 TopBtn("menu", "Menu") { menuSheet = true }
-                                Wordmark(Modifier.weight(1f).padding(start = 8.dp))
+                                Wordmark(Modifier.weight(1f).padding(start = 8.dp), size = 30.sp * hs)
                                 TopBtn("search", "Search") { nav.navigate("search") }
                                 Box { TopBtn("more", "More") { menu = true }; moreMenu() }
                             }
                             1 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Row(Modifier.weight(1f)) { TopBtn("menu", "Menu") { menuSheet = true } }
-                                Wordmark(Modifier)
+                                Wordmark(Modifier, size = 30.sp * hs)
                                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
                                     TopBtn("search", "Search") { nav.navigate("search") }
                                     Box { TopBtn("more", "More") { menu = true }; moreMenu() }
@@ -362,7 +446,7 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                             }
                             else -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 RoundTop("menu", "Menu") { menuSheet = true }
-                                Wordmark(Modifier.weight(1f), center = true, size = 34.sp)
+                                Wordmark(Modifier.weight(1f), center = true, size = 34.sp * hs)
                                 RoundTop("search", "Search") { nav.navigate("search") }
                             }
                         }
@@ -374,34 +458,29 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                             Text("All scraps", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                         }
                     }
-                    item {
-                        data class Tile(val name: String, val count: Int, val tab: Color)
-                        val inboxTile = if (inboxHidden) emptyList<Tile>() else listOf(Tile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size]))
-                        val tiles = shelves.topLevel().map { Tile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + inboxTile
+                    if (showBoxes) item {
+                        val inboxTile = if (inboxHidden) emptyList<BoxTile>() else listOf(BoxTile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size]))
+                        val tiles = shelves.topLevel().map { BoxTile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + inboxTile
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            tiles.chunked(4).forEach { row ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    row.forEach { tl -> TileBox(tl.name, tl.count, tl.tab, Modifier.weight(1f), { deleting = tl.name }) { nav.navigate("shelf/${tl.name}") } }
-                                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-                                }
-                            }
-                            if (shelves.isEmpty()) Text("＋ Create your first box", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("Create a box") { nav.navigate("collections") })
+                            BoxGrid(tiles, onHold = { deleting = it }, onNew = { nav.navigate("collections") }) { nav.navigate("shelf/$it") }
+                            if (shelves.isEmpty() && LocalBoxStyle.current != 4 && LocalBoxStyle.current != 6) Text("＋ Create your first box", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("Create a box") { nav.navigate("collections") })
                         }
                     }
                     item {
                         Row(Modifier.fillMaxWidth().padding(top = 4.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                             Row(Modifier.clip(RoundedCornerShape(26.dp)).background(Sb.line.copy(alpha = .6f)).padding(4.dp)) {
-                                SegIcon("list", !grid) { grid = false }; SegIcon("grid", grid) { grid = true }
+                                SegIcon("list", !grid) { gridTouched = true; gridPick = false }; SegIcon("grid", grid) { gridTouched = true; gridPick = true }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Ic("sort", 22.dp, Sb.mute)
-                                Text(if (byTitle) "Title" else "Date edited", color = Sb.mute, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp).tap("Change sort order type") { byTitle = !byTitle })
+                                // Switching the sort field also resets the order to its natural one: newest first, or A to Z.
+                                Text(if (byTitle) "Title" else "Date edited", color = Sb.mute, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 8.dp).tap("Change sort order type") { vm.setSort(!byTitle, !byTitle) })
                                 Box(Modifier.width(1.5.dp).height(22.dp).background(Sb.ink))
-                                Box(Modifier.size(44.dp).tap("Reverse order") { asc = !asc }, Alignment.Center) { Ic(if (asc) "up" else "down", 22.dp, Sb.mute) }
+                                Box(Modifier.size(44.dp).tap("Reverse order") { vm.setSortAsc(!asc) }, Alignment.Center) { Ic(if (asc) "up" else "down", 22.dp, Sb.mute) }
                             }
                         }
                     }
-                    if (sorted.isEmpty()) item { Text("No scraps yet. Tap New scrap to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
+                    if (sorted.isEmpty()) item { Text(if (navStyle == 1) "No scraps yet. Hold the menu button to add your first one." else "No scraps yet. Tap New scrap to write your first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 40.dp)) }
                     else if (grid) items(sorted.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             pair.forEach { n -> NoteTile(n, nav, Modifier.weight(1f)) { deletingScrap = n } }
@@ -410,12 +489,11 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
                     } else items(sorted, key = { it.id }) { n -> NoteRow(n, nav) { deletingScrap = n } }
                 }
                 val addScrap = { vm.pendingShelf = null; nav.navigate("edit/0") }
-                if (navStyle == 1) BottomNav(Modifier.align(Alignment.BottomEnd), { menuSheet = true }, addScrap)
+                if (navStyle == 1) BottomNav(Modifier.matchParentSize(), { menuSheet = true }, addScrap)
                 else NewScrapPill(Modifier.align(Alignment.BottomEnd), addScrap)
             }
         }
-        if (style) AppStyleSheet(vm) { style = false }
-        if (menuSheet) MenuSheet(nav, { menuSheet = false }, { style = true }) { vm.pendingShelf = null }
+        if (menuSheet) MenuSheet(nav, { menuSheet = false }) { vm.pendingShelf = null }
         deleting?.let { n -> DeleteBoxSheet(n, vm, { deleting = null }) }
         deletingScrap?.let { n -> DeleteScrapSheet(n, vm) { deletingScrap = null } }
         if (!welcomed) Welcome({ vm.dismissWelcome() }, { vm.addExamples() })

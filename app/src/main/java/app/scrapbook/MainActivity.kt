@@ -52,7 +52,10 @@ class MainActivity : ComponentActivity() {
         val theme by vm.theme.collectAsState()
         val incoming by vm.incoming.collectAsState()
         val darkMode by vm.darkMode.collectAsState()
-        ScrapbookTheme(theme, darkMode) {
+        val greyBg by vm.greyBg.collectAsState()
+        val showPreview by vm.showPreview.collectAsState()
+        val boxStyle by vm.boxStyle.collectAsState()
+        ScrapbookTheme(theme, darkMode, greyBg) {
             val nav = rememberNavController()
             val dark = Sb.dark
             LaunchedEffect(dark) {
@@ -62,23 +65,27 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(incoming != null) { if (incoming != null) nav.navigate("capture") { launchSingleTop = true } }
             Box(Modifier.fillMaxSize().background(LocalSb.current.paper), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 640.dp).fillMaxSize()) {
-                    NavHost(nav, "home") {
-                        composable("home") { HomeScreen(vm, nav) }
-                        composable("capture") { CaptureScreen(vm, nav) }
-                        composable("collections") { CollectionsScreen(vm, nav) }
-                        composable("shelf/{name}", listOf(navArgument("name") { type = NavType.StringType })) {
-                            ShelfScreen(vm, nav, it.arguments!!.getString("name")!!)
-                        }
-                        composable("search") { SearchScreen(vm, nav) }
-                        composable("rediscover") { RediscoverScreen(vm, nav) }
-                        composable("item/{id}", listOf(navArgument("id") { type = NavType.LongType })) {
-                            ItemScreen(vm, nav, it.arguments!!.getLong("id"))
-                        }
-                        composable("edit/{id}", listOf(navArgument("id") { type = NavType.LongType })) {
-                            EditorScreen(vm, nav, it.arguments!!.getLong("id"))
-                        }
-                        composable("layouts/{id}", listOf(navArgument("id") { type = NavType.LongType })) {
-                            LayoutScreen(vm, nav, it.arguments!!.getLong("id"))
+                    CompositionLocalProvider(LocalShowPreview provides showPreview, LocalBoxStyle provides boxStyle) {
+                        NavHost(nav, "home") {
+                            composable("home") { HomeScreen(vm, nav) }
+                            composable("settings") { SettingsScreen(vm, nav) }
+                            composable("about") { AboutScreen(nav) }
+                            composable("capture") { CaptureScreen(vm, nav) }
+                            composable("collections") { CollectionsScreen(vm, nav) }
+                            composable("shelf/{name}", listOf(navArgument("name") { type = NavType.StringType })) {
+                                ShelfScreen(vm, nav, it.arguments!!.getString("name")!!)
+                            }
+                            composable("search") { SearchScreen(vm, nav) }
+                            composable("rediscover") { RediscoverScreen(vm, nav) }
+                            composable("item/{id}", listOf(navArgument("id") { type = NavType.LongType })) {
+                                ItemScreen(vm, nav, it.arguments!!.getLong("id"))
+                            }
+                            composable("edit/{id}", listOf(navArgument("id") { type = NavType.LongType })) {
+                                EditorScreen(vm, nav, it.arguments!!.getLong("id"))
+                            }
+                            composable("layouts/{id}", listOf(navArgument("id") { type = NavType.LongType })) {
+                                LayoutScreen(vm, nav, it.arguments!!.getLong("id"))
+                            }
                         }
                     }
                 }

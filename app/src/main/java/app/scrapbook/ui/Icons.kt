@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -96,6 +96,20 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                 drawRoundRect(color, Offset(.14f * w, .22f * w), Size(.6f * w, .64f * w), CornerRadius(.1f * w), style = st)
                 line(.44f, .6f, .84f, .2f); line(.38f, .66f, .44f, .6f)
             }
+            "clock" -> { drawCircle(color, .37f * w, Offset(.5f * w, .5f * w), style = st); line(.5f, .28f, .5f, .5f); line(.5f, .5f, .66f, .6f) }
+            "sparkle" -> {
+                val p = Path().apply {
+                    moveTo(.5f * w, .1f * w); quadraticBezierTo(.55f * w, .45f * w, .9f * w, .5f * w)
+                    quadraticBezierTo(.55f * w, .55f * w, .5f * w, .9f * w); quadraticBezierTo(.45f * w, .55f * w, .1f * w, .5f * w)
+                    quadraticBezierTo(.45f * w, .45f * w, .5f * w, .1f * w); close()
+                }
+                drawPath(p, color, style = st)
+            }
+            "sliders" -> {
+                line(.14f, .3f, .26f, .3f); line(.46f, .3f, .86f, .3f); drawCircle(color, .1f * w, Offset(.36f * w, .3f * w), style = st)
+                line(.14f, .7f, .54f, .7f); line(.74f, .7f, .86f, .7f); drawCircle(color, .1f * w, Offset(.64f * w, .7f * w), style = st)
+            }
+            "info" -> { drawCircle(color, .38f * w, Offset(.5f * w, .5f * w), style = st); dot(.5f, .34f, .045f); line(.5f, .47f, .5f, .7f) }
         }
     }
 }

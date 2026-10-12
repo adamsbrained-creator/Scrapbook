@@ -72,7 +72,7 @@ fun Sticky(item: Item, onClick: () -> Unit) {
 fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
     val shelf = shelves.firstOrNull { it.name == name }
-    val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }; var styleSheet by remember { mutableStateOf(false) }
+    val navStyle by vm.navStyle.collectAsState(); var menuSheet by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }; var inboxSheet by remember { mutableStateOf(false) }; var existed by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }; var creatingSub by remember { mutableStateOf(false) }; var deletingSub by remember { mutableStateOf<String?>(null) }
     var deletingScrap by remember { mutableStateOf<Item?>(null) }; val deleted by vm.deleted.collectAsState(); val snack = remember { SnackbarHostState() }
@@ -124,13 +124,10 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                     }
                     if (shelf != null) item {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            subs.chunked(4).forEach { row ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    row.forEach { s -> TileBox(s.name, all.count { n -> n.collection == s.name }, TAB_COLORS[s.color % TAB_COLORS.size], Modifier.weight(1f), { deletingSub = s.name }) { nav.navigate("shelf/${s.name}") } }
-                                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-                                }
-                            }
-                            Text("＋ New box inside", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("New box inside $name") { creatingSub = true })
+                            BoxGrid(subs.map { BoxTile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) },
+                                onHold = { deletingSub = it }, onNew = { creatingSub = true }) { nav.navigate("shelf/$it") }
+                            // Chips and Notebook covers draw their own dashed "New box" button inside the grid.
+                            if (LocalBoxStyle.current != 4 && LocalBoxStyle.current != 6) Text("＋ New box inside", fontSize = 13.sp, color = t.acc, modifier = Modifier.link("New box inside $name") { creatingSub = true })
                         }
                     }
                     item {
@@ -167,7 +164,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                             }
                         }
                     }
-                    if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else "Nothing here yet. Tap New scrap to add the first one.", color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
+                    if (shown.isEmpty()) item { Text(if (q.isNotBlank() || kind != null) "Nothing matches." else (if (navStyle == 1) "Nothing here yet. Hold the menu button to add the first one." else "Nothing here yet. Tap New scrap to add the first one."), color = Sb.mute, fontSize = 15.sp, modifier = Modifier.padding(vertical = 30.dp)) }
                     else if (grid) items(shown.chunked(2)) { pair ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             pair.forEach { n -> NoteTile(n, nav, Modifier.weight(1f)) { deletingScrap = n } }
@@ -176,7 +173,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
                     } else items(shown, key = { it.id }) { n -> NoteRow(n, nav) { deletingScrap = n } }
                 }
                 val addScrap = { vm.pendingShelf = if (shelf != null) name else null; nav.navigate("edit/0") }
-                if (navStyle == 1) BottomNav(Modifier.align(Alignment.BottomEnd), { menuSheet = true }, addScrap)
+                if (navStyle == 1) BottomNav(Modifier.matchParentSize(), { menuSheet = true }, addScrap)
                 else NewScrapPill(Modifier.align(Alignment.BottomEnd), addScrap)
             }
         }
@@ -186,8 +183,7 @@ fun ShelfScreen(vm: ArchiveViewModel, nav: NavController, name: String) {
         deletingScrap?.let { n -> DeleteScrapSheet(n, vm) { deletingScrap = null } }
         if (inboxSheet) InboxSheet(vm) { inboxSheet = false }
         if (deleting) DeleteBoxSheet(name, vm, { deleting = false }) { if (name == "Inbox") nav.popBackStack() }
-        if (menuSheet) MenuSheet(nav, { menuSheet = false }, { styleSheet = true }) { vm.pendingShelf = null }
-        if (styleSheet) AppStyleSheet(vm) { styleSheet = false }
+        if (menuSheet) MenuSheet(nav, { menuSheet = false }) { vm.pendingShelf = null }
     }
 }
 

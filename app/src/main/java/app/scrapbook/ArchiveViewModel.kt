@@ -31,6 +31,14 @@ private val NAV = intPreferencesKey("nav_style")
 private val EDITOR = intPreferencesKey("editor_style")
 private val WELCOMED = booleanPreferencesKey("welcomed")
 private val INBOX_HIDDEN = booleanPreferencesKey("inbox_hidden")
+private val GREY_BG = booleanPreferencesKey("grey_bg")
+private val HEADER_SIZE = intPreferencesKey("header_size")
+private val DEFAULT_GRID = booleanPreferencesKey("default_grid")
+private val SORT_TITLE = booleanPreferencesKey("sort_title")
+private val SORT_ASC = booleanPreferencesKey("sort_asc")
+private val BOX_STYLE = intPreferencesKey("box_style")
+private val SHOW_PREVIEW = booleanPreferencesKey("show_preview")
+private val SHOW_BOXES = booleanPreferencesKey("show_boxes")
 
 /** Something shared into the app from elsewhere, waiting to be saved. */
 data class Incoming(val text: String, val subject: String, val images: List<Uri>)
@@ -63,12 +71,36 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Inbox is built in, so "deleting" it hides its tile. Its scraps stay in All scraps, and the Boxes screen can bring it back. */
     val inboxHidden: StateFlow<Boolean> = ds.data.map { it[INBOX_HIDDEN] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     fun setInboxHidden(b: Boolean) = edit { it[INBOX_HIDDEN] = b }
-    /** Add button style: 0 is the "New scrap" pill, 1 is a bottom bar with a menu button and a round add button. */
+    /** Add button style: 0 is the "New scrap" pill, 1 is a single round menu button (as in Binder): tap for the menu, hold it to pop out the round add button. */
     val navStyle: StateFlow<Int> = ds.data.map { it[NAV] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     fun setNav(i: Int) = edit { it[NAV] = i }
     /** Editor toolbar: 0 is the selection bubble (default), 1 is the floating pill. */
     val editorStyle: StateFlow<Int> = ds.data.map { it[EDITOR] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     fun setEditorStyle(i: Int) = edit { it[EDITOR] = i }
+    /** Light mode page color: false is white (the default), true is the soft grey page. Dark mode ignores it. */
+    val greyBg: StateFlow<Boolean> = ds.data.map { it[GREY_BG] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun setGreyBg(b: Boolean) = edit { it[GREY_BG] = b }
+    /** Size of the "scrapbook" title on the main page: 0 compact, 1 regular, 2 large. */
+    val headerSize: StateFlow<Int> = ds.data.map { it[HEADER_SIZE] ?: 1 }.stateIn(viewModelScope, SharingStarted.Eagerly, 1)
+    fun setHeaderSize(i: Int) = edit { it[HEADER_SIZE] = i }
+    /** The view the main page starts in. The list/grid switch on the page itself only changes it until you leave. */
+    val defaultGrid: StateFlow<Boolean> = ds.data.map { it[DEFAULT_GRID] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun setDefaultGrid(b: Boolean) = edit { it[DEFAULT_GRID] = b }
+    /** How the main page is sorted: by title (true) or by date edited (false), and whether the order is reversed (oldest first, Z to A). */
+    val sortTitle: StateFlow<Boolean> = ds.data.map { it[SORT_TITLE] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun setSortTitle(b: Boolean) = edit { it[SORT_TITLE] = b }
+    val sortAsc: StateFlow<Boolean> = ds.data.map { it[SORT_ASC] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun setSortAsc(b: Boolean) = edit { it[SORT_ASC] = b }
+    fun setSort(title: Boolean, asc: Boolean) = edit { it[SORT_TITLE] = title; it[SORT_ASC] = asc }
+    /** Look of the boxes: an index into BOX_STYLES (0 tabbed, 1 paper stack, 2 tinted tiles, 3 folder tabs, 4 chips, 5 list rows, 6 notebook covers). */
+    val boxStyle: StateFlow<Int> = ds.data.map { it[BOX_STYLE] ?: 0 }.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+    fun setBoxStyle(i: Int) = edit { it[BOX_STYLE] = i }
+    /** Whether lists show a few lines of each scrap under its title. */
+    val showPreview: StateFlow<Boolean> = ds.data.map { it[SHOW_PREVIEW] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    fun setShowPreview(b: Boolean) = edit { it[SHOW_PREVIEW] = b }
+    /** Whether the box tiles are shown on the main page. */
+    val showBoxes: StateFlow<Boolean> = ds.data.map { it[SHOW_BOXES] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    fun setShowBoxes(b: Boolean) = edit { it[SHOW_BOXES] = b }
     fun setAccent(i: Int) = edit { it[ACC] = i }
     fun setSerif(b: Boolean) = edit { it[SERIF] = b }
     fun setRadius(dp: Int) = edit { it[RAD] = dp }
