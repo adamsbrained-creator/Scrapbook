@@ -45,6 +45,11 @@ object Sb {
     val card get() = if (dark) Color(0xFF1C1C1C) else if (greyBg) Color.White else Color(0xFFF3F3F3)
     /** Sheets, floating bars and the selected piece of a segmented control. White in light mode whatever the page is. */
     val raised get() = if (dark) Color(0xFF1C1C1C) else Color.White
+    /** The editor's 3-dot menu: a step lighter than the page chrome so it stands out over the dimmed screen. */
+    val menu get() = if (dark) Color(0xFF242424) else Color.White
+    val menuLine get() = if (dark) Color(0xFF343434) else Color(0xFFE6E6E6)
+    /** Destructive actions (Delete). */
+    val danger get() = if (dark) Color(0xFFFF6B5E) else Color(0xFFD93A2B)
     private val lightNotes = listOf(Color(0xFFF6E6A8), Color(0xFFDBE6D6), Color(0xFFD8E4EE), Color(0xFFF1D9DE), Color(0xFFE3DDF0))
     private val darkNotes = listOf(Color(0xFF5A5128), Color(0xFF3E5240), Color(0xFF3A4C5E), Color(0xFF5C4048), Color(0xFF4A4560))
     val notes get() = if (dark) darkNotes else lightNotes

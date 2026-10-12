@@ -1,6 +1,15 @@
 package app.scrapbook.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -354,6 +363,37 @@ private fun Polaroid(uri: String, kind: Kind, i: Int, onRemove: () -> Unit) {
     }
 }
 
+/** A 40dp round button inside the header's action pill. */
+@Composable
+private fun HeaderBtn(desc: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(Modifier.size(40.dp).clip(CircleShape).tap(desc, onClick), Alignment.Center) { content() }
+}
+
+/** The 3-dot menu surface: 252dp wide, 24dp corners, hanging under the header's top-right corner. */
+@Composable
+private fun MenuPanel(content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    Column(Modifier.statusBarsPadding().padding(top = 60.dp, end = 16.dp).width(252.dp)
+        .shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Sb.menu).padding(8.dp), content = content)
+}
+
+/** One menu row: icon and label, with an optional second line. */
+@Composable
+private fun MenuRow(icon: String, label: String, sub: String? = null, tint: Color = Sb.ink, iconColor: Color = tint, enabled: Boolean = true, onClick: () -> Unit) {
+    val sans = LocalFonts.current.second
+    Row(Modifier.fillMaxWidth().height(if (sub != null) 58.dp else 52.dp).clip(RoundedCornerShape(16.dp)).alpha(if (enabled) 1f else .4f)
+        .tap(label) { if (enabled) onClick() }.padding(horizontal = 12.dp), Arrangement.spacedBy(14.dp), Alignment.CenterVertically) {
+        Ic(icon, 22.dp, iconColor)
+        Column {
+            Text(label, color = tint, fontSize = 16.sp, lineHeight = 20.sp, fontFamily = sans)
+            if (sub != null) Text(sub, color = Sb.mute, fontSize = 12.5.sp, lineHeight = 16.sp, fontFamily = sans)
+        }
+    }
+}
+
+@Composable
+private fun MenuDivider() = Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(Sb.menuLine))
+
 /** A normal notes editor: autosaves as you type, formatting toolbar, lists continue on Enter, undo and redo. id == 0 starts a new note. */
 @Composable
 fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
@@ -416,42 +456,33 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     LaunchedEffect(title, body.text, color, kind, shelf, tags, imgs, source) { delay(600); flush() }
     fun leave() { if (leaving) return; leaving = true; scope.launch { flush(); nav.popBackStack() } }
     BackHandler { leave() }
+    BackHandler(menu) { menu = false }
 
     Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = t.paper) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).consumeWindowInsets(pad).background(pageTint(color) ?: Color.Transparent).imePadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(48.dp).tap("Save and go back") { leave() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
-                BasicTextField(title, { title = it.replace("\n", " ") }, Modifier.weight(1f).padding(horizontal = 4.dp), singleLine = true,
-                    textStyle = TextStyle(fontSize = 22.sp, fontFamily = headFont(), fontWeight = FontWeight.Medium, color = Sb.ink),
-                    cursorBrush = SolidColor(t.acc),
-                    decorationBox = { inner ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (title.isEmpty()) Text("Title", color = Sb.mute.copy(alpha = .6f), fontSize = 22.sp, fontFamily = headFont(), fontWeight = FontWeight.Medium)
-                            inner()
-                        }
-                    })
-                Box(Modifier.size(44.dp).tap("Reading view") { scope.launch { flush(); if (curId != 0L) nav.navigate("item/$curId") } }, Alignment.Center) { Ic("book", 24.dp, Sb.ink) }
-                Box(Modifier.size(44.dp).tap("Add image") { addImage() }, Alignment.Center) { Ic("plus", 26.dp, Sb.ink) }
-                Box {
-                    Box(Modifier.size(44.dp).tap("More options") { menu = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text(if (more) "Hide details" else "Details: color, box, tags") }, onClick = { menu = false; more = !more })
-                        if (editorStyle == 1) {
-                            DropdownMenuItem(text = { Text("Undo") }, enabled = undo.isNotEmpty(), onClick = { menu = false; doUndo() })
-                            DropdownMenuItem(text = { Text("Redo") }, enabled = redo.isNotEmpty(), onClick = { menu = false; doRedo() })
-                            DropdownMenuItem(text = { Text("Quote") }, onClick = { menu = false; edit(body.toggleLine("> ")) })
-                            DropdownMenuItem(text = { Text("Divider") }, onClick = { menu = false; edit(body.insertDivider()) })
-                        }
-                        if (live != null) {
-                            DropdownMenuItem(text = { Text(if (live.pinned) "Unpin" else "Pin") }, onClick = { menu = false; vm.togglePin(live) })
-                            DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; scope.launch { flush(); nav.navigate("layouts/${live.id}") } })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; vm.delete(live); nav.popBackStack("home", false) })
-                        }
-                    }
+            val subtitle = (listOf(shelf) + tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }).joinToString(" · ")
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), Arrangement.spacedBy(12.dp), Alignment.CenterVertically) {
+                Box(Modifier.size(44.dp).clip(CircleShape).background(Sb.card).tap("Save and go back") { leave() }, Alignment.Center) { Ic("back", 26.dp, Sb.ink) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    BasicTextField(title, { title = it.replace("\n", " ") }, Modifier.fillMaxWidth(), singleLine = true,
+                        textStyle = TextStyle(fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.2).sp, fontFamily = headFont(), fontWeight = FontWeight.Medium, color = Sb.ink),
+                        cursorBrush = SolidColor(t.acc),
+                        decorationBox = { inner ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (title.isEmpty()) Text("Title", color = Sb.mute.copy(alpha = .6f), fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.2).sp, fontFamily = headFont(), fontWeight = FontWeight.Medium)
+                                inner()
+                            }
+                        })
+                    Text(subtitle, fontSize = 12.5.sp, lineHeight = 16.sp, color = Sb.mute, fontFamily = LocalFonts.current.second, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // One pill holds the three actions: reading view, add image, more.
+                Row(Modifier.height(44.dp).clip(CircleShape).background(Sb.card).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    HeaderBtn("Reading view", { scope.launch { flush(); if (curId != 0L) nav.navigate("item/$curId") } }) { Ic("book", 22.dp, Sb.ink) }
+                    HeaderBtn("Add image", { addImage() }) { Ic("plus", 22.dp, t.acc) }
+                    HeaderBtn("More options", { menu = true }) { Ic("more", 22.dp, Sb.ink) }
                 }
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line))
             Column(Modifier.weight(1f).onSizeChanged { viewportH = it.height }.verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 14.dp)) {
                 if (kind == Kind.Quote) { Field(source, { source = it }, "Source: who said it, or where it is from", 14.sp, headFont()); Spacer(Modifier.height(10.dp)) }
                 if (imgs.isNotEmpty()) {
@@ -488,6 +519,30 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                 { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) }, { addImage() }, { doUndo() }, { doRedo() })
             else PillBar(body, { m -> edit(body.toggleInline(m)) }, { edit(body.cycleHeading()) }, { edit(body.toggleLine("- ")) },
                 { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) })
+        }
+    }
+    AnimatedVisibility(menu, Modifier.fillMaxSize(), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .5f)).semantics { contentDescription = "Close menu" }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { menu = false })
+    }
+    AnimatedVisibility(menu, Modifier.align(Alignment.TopEnd),
+        enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = .92f, transformOrigin = TransformOrigin(1f, 0f)), exit = fadeOut(tween(100))) {
+        MenuPanel {
+            MenuRow("sliders", if (more) "Hide details" else "Details", "Color, box, tags") { menu = false; more = !more }
+            if (editorStyle == 1) {
+                MenuDivider()
+                MenuRow("undo", "Undo", enabled = undo.isNotEmpty()) { menu = false; doUndo() }
+                MenuRow("redo", "Redo", enabled = redo.isNotEmpty()) { menu = false; doRedo() }
+                MenuRow("quote", "Quote") { menu = false; edit(body.toggleLine("> ")) }
+                MenuRow("divider", "Divider") { menu = false; edit(body.insertDivider()) }
+                MenuDivider()
+            }
+            if (live != null) {
+                MenuRow(if (live.pinned) "star" else "starline", if (live.pinned) "Unpin" else "Pin", iconColor = if (live.pinned) t.acc else Sb.ink) { menu = false; vm.togglePin(live) }
+                MenuRow("layout", "Change layout") { menu = false; scope.launch { flush(); nav.navigate("layouts/${live.id}") } }
+                MenuDivider()
+                MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(live); nav.popBackStack("home", false) }
+            }
         }
     }
     linkSheet?.let { sel ->

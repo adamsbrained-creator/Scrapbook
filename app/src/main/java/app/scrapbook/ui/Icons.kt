@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -66,14 +66,14 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                 line(.28f, .5f, .72f, .26f); line(.28f, .5f, .72f, .74f)
                 dot(.26f, .5f, .1f); dot(.74f, .25f, .1f); dot(.74f, .75f, .1f)
             }
-            "star" -> {
+            "star", "starline" -> {
                 val p = Path()
                 for (i in 0 until 10) {
-                    val a = Math.toRadians(-90.0 + i * 36.0); val r = if (i % 2 == 0) .46f else .2f
+                    val a = Math.toRadians(-90.0 + i * 36.0); val r = if (i % 2 == 0) .46f else if (kind == "star") .2f else .24f
                     val x = (.5f + r * cos(a).toFloat()) * w; val y = (.52f + r * sin(a).toFloat()) * w
                     if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
                 }
-                p.close(); drawPath(p, color)
+                p.close(); if (kind == "star") drawPath(p, color) else drawPath(p, color, style = st)
             }
             "link" -> rotate(-45f, Offset(.5f * w, .5f * w)) {
                 drawRoundRect(color, Offset(.06f * w, .38f * w), Size(.52f * w, .24f * w), CornerRadius(.12f * w), style = st)
@@ -109,6 +109,24 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                 line(.14f, .3f, .26f, .3f); line(.46f, .3f, .86f, .3f); drawCircle(color, .1f * w, Offset(.36f * w, .3f * w), style = st)
                 line(.14f, .7f, .54f, .7f); line(.74f, .7f, .86f, .7f); drawCircle(color, .1f * w, Offset(.64f * w, .7f * w), style = st)
             }
+            "trash" -> {
+                fun u(v: Float) = v / 24f * w
+                line(4f / 24f, 7f / 24f, 20f / 24f, 7f / 24f); line(10f / 24f, 11f / 24f, 10f / 24f, 17f / 24f); line(14f / 24f, 11f / 24f, 14f / 24f, 17f / 24f)
+                val body = Path().apply {
+                    moveTo(u(6f), u(7f)); lineTo(u(7f), u(19f)); quadraticBezierTo(u(7.1f), u(21f), u(9f), u(21f)); lineTo(u(15f), u(21f))
+                    quadraticBezierTo(u(16.9f), u(21f), u(17f), u(19f)); lineTo(u(18f), u(7f))
+                }
+                val lid = Path().apply { moveTo(u(9f), u(7f)); lineTo(u(9f), u(4f)); lineTo(u(15f), u(4f)); lineTo(u(15f), u(7f)) }
+                drawPath(body, color, style = st); drawPath(lid, color, style = st)
+            }
+            "layout" -> {
+                fun u(v: Float) = v / 24f * w
+                listOf(floatArrayOf(4f, 4f, 7f, 9f), floatArrayOf(13f, 4f, 7f, 5f), floatArrayOf(13f, 11f, 7f, 9f), floatArrayOf(4f, 15f, 7f, 5f)).forEach { r ->
+                    drawRoundRect(color, Offset(u(r[0]), u(r[1])), Size(u(r[2]), u(r[3])), CornerRadius(u(2f)), style = st)
+                }
+            }
+            "quote" -> { line(.2f, .22f, .2f, .78f); line(.38f, .32f, .84f, .32f); line(.38f, .5f, .84f, .5f); line(.38f, .68f, .66f, .68f) }
+            "divider" -> { line(.12f, .5f, .88f, .5f); line(.3f, .28f, .7f, .28f); line(.3f, .72f, .7f, .72f) }
             "info" -> { drawCircle(color, .38f * w, Offset(.5f * w, .5f * w), style = st); dot(.5f, .34f, .045f); line(.5f, .47f, .5f, .7f) }
         }
     }
