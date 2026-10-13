@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy, close, alignl, alignc, alignr, indent, outdent */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -134,6 +134,12 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
                 }
                 drawPath(back, color, style = st)
             }
+            "close" -> { line(.26f, .26f, .74f, .74f); line(.74f, .26f, .26f, .74f) }
+            "alignl" -> { line(.2f, .3f, .8f, .3f); line(.2f, .5f, .55f, .5f); line(.2f, .7f, .8f, .7f) }
+            "alignc" -> { line(.2f, .3f, .8f, .3f); line(.33f, .5f, .67f, .5f); line(.2f, .7f, .8f, .7f) }
+            "alignr" -> { line(.2f, .3f, .8f, .3f); line(.45f, .5f, .8f, .5f); line(.2f, .7f, .8f, .7f) }
+            "indent" -> { line(.4f, .3f, .84f, .3f); line(.4f, .5f, .84f, .5f); line(.4f, .7f, .84f, .7f); line(.16f, .38f, .28f, .5f); line(.28f, .5f, .16f, .62f) }
+            "outdent" -> { line(.4f, .3f, .84f, .3f); line(.4f, .5f, .84f, .5f); line(.4f, .7f, .84f, .7f); line(.28f, .38f, .16f, .5f); line(.16f, .5f, .28f, .62f) }
             "quote" -> { line(.2f, .22f, .2f, .78f); line(.38f, .32f, .84f, .32f); line(.38f, .5f, .84f, .5f); line(.38f, .68f, .66f, .68f) }
             "divider" -> { line(.12f, .5f, .88f, .5f); line(.3f, .28f, .7f, .28f); line(.3f, .72f, .7f, .72f) }
             "external" -> { line(.33f, .67f, .67f, .33f); line(.375f, .33f, .67f, .33f); line(.67f, .33f, .67f, .625f) }

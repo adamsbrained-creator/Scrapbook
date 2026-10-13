@@ -34,14 +34,37 @@ fun extractTitle(html: String): String? =
         ?.replace("&amp;", "&")?.replace("&quot;", "\"")?.replace("&#39;", "'")?.replace(Regex("\\s+"), " ")?.trim()
         ?.takeIf { it.isNotEmpty() }?.take(120)
 
-/** Plain-text preview of a formatted scrap: drops list, heading and quote markers, inline formatting marks and dividers. */
+/** A formatting span in a note: {c:ff0000 s:20 u|text}. c is the text color (hex), s the size in sp, u underlines. */
+val SPAN_RE = Regex("\\{((?:c:[0-9a-fA-F]{6}|s:\\d{1,3}|u)(?: (?:c:[0-9a-fA-F]{6}|s:\\d{1,3}|u)){0,2})\\|(.+?)\\}")
+
+data class SpanAttrs(val color: String? = null, val size: Int? = null, val underline: Boolean = false) {
+    val none get() = color == null && size == null && !underline
+    /** The attribute list as written inside the braces, for example "c:ff0000 s:20 u". */
+    fun tag() = listOfNotNull(color?.let { "c:$it" }, size?.let { "s:$it" }, if (underline) "u" else null).joinToString(" ")
+}
+
+fun parseSpanAttrs(src: String): SpanAttrs {
+    var c: String? = null; var s: Int? = null; var u = false
+    for (tok in src.split(' ')) when {
+        tok.startsWith("c:") -> c = tok.substring(2).lowercase()
+        tok.startsWith("s:") -> s = tok.substring(2).toIntOrNull()?.coerceIn(8, 96)
+        tok == "u" -> u = true
+    }
+    return SpanAttrs(c, s, u)
+}
+
+/** Layout tags that sit right after a line's prefix: {i:1} to {i:4} indents the line, {a:c} centers it, {a:r} right-aligns it. */
+val LINE_TAGS = Regex("^(?:\\{i:([1-4])\\})?(?:\\{a:([cr])\\})?")
+val LINE_PREFIX_RE = Regex("^(?:## |# |> |- \\[[ x]\\] |- |\\d+\\. )")
+
+/** Plain-text preview of a formatted scrap: drops list, heading and quote markers, layout tags, inline formatting marks and dividers. */
 fun plainPreview(text: String, sep: String = " · "): String =
-    text.lines().map { l -> stripInline(l.replace(Regex("^(#{1,2} |> |- \\[[ x]\\] |- |\\d+\\. )"), "")) }
+    text.lines().map { l -> stripInline(l.replace(LINE_PREFIX_RE, "").replace(LINE_TAGS, "")) }
         .filter { it.isNotBlank() && it != "---" }.joinToString(sep)
 
-/** Removes **bold**, *italic*, ~~strike~~ and ==highlight== marks and [link](url) syntax, keeping the text. */
-fun stripInline(s: String): String = s.replace(Regex("\\[([^\\]\\n]+)\\]\\([^)\\s]*\\)"), "\$1").replace(Regex("\\*\\*(.+?)\\*\\*"), "\$1").replace(Regex("~~(.+?)~~"), "\$1")
-    .replace(Regex("==(.+?)=="), "\$1").replace(Regex("\\*(.+?)\\*"), "\$1")
+/** Removes **bold**, *italic*, ~~strike~~, ==highlight== and {color|size|underline} marks and [link](url) syntax, keeping the text. */
+fun stripInline(s0: String): String = SPAN_RE.replace(s0) { it.groupValues[2] }.let { s -> s.replace(Regex("\\[([^\\]\\n]+)\\]\\([^)\\s]*\\)"), "\$1").replace(Regex("\\*\\*(.+?)\\*\\*"), "\$1").replace(Regex("~~(.+?)~~"), "\$1")
+    .replace(Regex("==(.+?)=="), "\$1").replace(Regex("\\*(.+?)\\*"), "\$1") }
 
 /**
  * A note without a typed title gets its first line as title. This drops that first line from the body

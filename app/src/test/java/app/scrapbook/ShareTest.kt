@@ -17,6 +17,13 @@ class ShareTest {
     @Test fun inlineMarksAreStripped() = assertEquals("Bold and it x m", plainPreview("**Bold** and *it* ~~x~~ ==m=="))
     @Test fun numberedItemsLoseTheirNumber() = assertEquals("First", plainPreview("1. First"))
     @Test fun linksKeepOnlyTheirText() = assertEquals("see docs now", plainPreview("see [docs](https://example.com/a) now"))
+    @Test fun spansLoseTheirBraces() = assertEquals("red big", plainPreview("{c:ff0000|red} {s:24 u|big}"))
+    @Test fun layoutTagsAreStripped() = assertEquals("Hi · Item", plainPreview("{a:c}Hi\n- {i:1}Item"))
+    @Test fun spanAttributesRoundTrip() {
+        val a = parseSpanAttrs("c:FF0000 s:20 u")
+        assertEquals(SpanAttrs("ff0000", 20, true), a)
+        assertEquals("c:ff0000 s:20 u", a.tag())
+    }
     @Test fun kinds() {
         assertEquals(Kind.Link, classifyShare("https://a.b/c", false))
         assertEquals(Kind.Quote, classifyShare("“Hello”", false))

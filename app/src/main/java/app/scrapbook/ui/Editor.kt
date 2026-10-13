@@ -15,6 +15,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.text.ParagraphStyle
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,7 +102,7 @@ private const val DIVIDER_GLYPHS = "──────────────�
  * checkboxes are drawn as • ☐ ☑, and inline marks (** ~~ == * and the [ ](url) of a link) disappear until the cursor
  * touches that piece of text. The saved text is never changed; the returned maps translate between saved and shown positions.
  */
-private fun mdRender(text: String, sel: TextRange?, acc: Color): MdView {
+private fun mdRender(text: String, sel: TextRange?, acc: Color, baseLine: Float): MdView {
     val n = text.length
     val styled = buildAnnotatedString {
         append(text); var i = 0
@@ -116,7 +119,15 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color): MdView {
             if (line.startsWith("- [ ] ") || line.startsWith("- [x] ")) addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + 5)
             else if (line.startsWith("- ")) addStyle(SpanStyle(color = acc, fontWeight = FontWeight.Bold), i, i + 1)
             // Numbered lists keep the normal text color on purpose.
-            styleInline(line, i, acc); styleLinks(line, i, acc)
+            styleInline(line, i, acc); styleLinks(line, i, acc); styleSpans(line, i)
+            // Alignment, indent and the taller lines big text needs are paragraph styles; each covers its line and the line break after it.
+            val (_, lineTags) = leadOf(line); val (ind, al) = tagsOf(lineTags)
+            val big = SPAN_RE.findAll(line).maxOfOrNull { parseSpanAttrs(it.groupValues[1]).size ?: 0 } ?: 0
+            val tall = big * 1.3f > baseLine
+            if (ind > 0 || al != 'l' || tall) addStyle(ParagraphStyle(
+                textAlign = when (al) { 'c' -> TextAlign.Center; 'r' -> TextAlign.End; else -> TextAlign.Unspecified },
+                lineHeight = if (tall) (big * 1.3f).sp else TextUnit.Unspecified,
+                textIndent = if (ind > 0) TextIndent((24 * ind).sp, (24 * ind).sp) else null), i, minOf(i + line.length + 1, n))
             i += line.length + 1
         }
     }
@@ -124,7 +135,8 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color): MdView {
     // Which saved characters are hidden or swapped for a glyph.
     val hide = BooleanArray(n); val closing = BooleanArray(n); val repl = arrayOfNulls<Pair<Int, String>>(n)
     val selA = sel?.let { minOf(it.start, it.end) } ?: 0; val selB = sel?.let { maxOf(it.start, it.end) } ?: 0
-    fun touches(from: Int, to: Int) = sel != null && selA <= to && selB >= from
+    // Marks come back only while the cursor sits in or next to them; a selection keeps them hidden, so formatting shows at once.
+    fun touches(from: Int, to: Int) = sel != null && sel.collapsed && selA <= to && selB >= from
     fun hideRun(from: Int, to: Int, isClosing: Boolean) { for (k in from until minOf(to, n)) { hide[k] = true; closing[k] = isClosing } }
     fun inline(s: String, off: Int) {
         for (m in INLINE.findAll(s)) {
@@ -139,16 +151,20 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color): MdView {
     var i = 0
     for (line in text.split("\n")) {
         val le = i + line.length
+        val (pfx, tags) = leadOf(line); val hasText = line.length > pfx.length + tags.length
         when {
-            line.startsWith("## ") -> if (line.length > 3) hideRun(i, i + 3, false)
-            line.startsWith("# ") -> if (line.length > 2) hideRun(i, i + 2, false)
-            line.startsWith("> ") -> if (line.length > 2) hideRun(i, i + 2, false)
+            line.startsWith("## ") || line.startsWith("# ") || line.startsWith("> ") -> if (hasText) hideRun(i, i + pfx.length, false)
             line.startsWith("- [ ] ") -> repl[i] = 5 to "☐"
             line.startsWith("- [x] ") -> repl[i] = 5 to "☑"
             line.startsWith("- ") -> repl[i] = 1 to "•"
             line == "---" && !touches(i, le) -> repl[i] = 3 to DIVIDER_GLYPHS
         }
+        if (tags.isNotEmpty()) hideRun(i + pfx.length, i + pfx.length + tags.length, false)
         inline(line, i)
+        for (m in SPAN_RE.findAll(line)) {
+            val s0 = i + m.range.first; val e0 = i + m.range.last + 1; val cr = m.groups[2]!!.range
+            if (!touches(s0, e0)) { hideRun(s0, i + cr.first, false); hideRun(i + cr.last + 1, e0, true) }
+        }
         for (m in LINK.findAll(line)) {
             val s0 = i + m.range.first; val e0 = i + m.range.last + 1
             if (!touches(s0, e0)) { hideRun(s0, s0 + 1, false); hideRun(s0 + 1 + m.groupValues[1].length, e0, true) }
@@ -184,6 +200,10 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color): MdView {
     val shownText = buildAnnotatedString {
         append(shown.toString())
         for (r in styled.spanStyles) {
+            val s = o2t[r.start.coerceIn(0, n)]; val e = o2t[r.end.coerceIn(0, n)]
+            if (e > s) addStyle(r.item, s, e)
+        }
+        for (r in styled.paragraphStyles) {
             val s = o2t[r.start.coerceIn(0, n)]; val e = o2t[r.end.coerceIn(0, n)]
             if (e > s) addStyle(r.item, s, e)
         }
@@ -227,8 +247,16 @@ private fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue 
     if (os.collapsed && new.text.length == old.text.length - 1 && new.selection.collapsed && new.selection.start == os.start - 1) {
         val s = old.text; val pos = os.start
         val ls = s.lastIndexOf('\n', pos - 1) + 1; val le = s.indexOf('\n', ls).let { if (it < 0) s.length else it }
-        val prefix = LINE_PREFIXES.firstOrNull { s.substring(ls, le).startsWith(it) }
-        if (prefix != null && pos == ls + prefix.length) return new.copy(text = s.removeRange(ls, ls + prefix.length), selection = TextRange(ls))
+        val line = s.substring(ls, le)
+        val hidden = LINE_PREFIXES.firstOrNull { line.startsWith(it) }.orEmpty()
+        val numPfx = if (hidden.isEmpty()) NUM.find(line)?.value.orEmpty() else ""
+        val tags = LINE_TAGS.find(line.substring(hidden.length + numPfx.length))?.value.orEmpty()
+        if (hidden.length + numPfx.length + tags.length > 0 && pos == ls + hidden.length + numPfx.length + tags.length) {
+            // The mark in front of the text is hidden, so one backspace removes all of it: the prefix first, then the layout tags.
+            val from = if (hidden.isNotEmpty()) ls else ls + numPfx.length
+            val to = if (hidden.isNotEmpty()) ls + hidden.length else if (tags.isNotEmpty()) from + tags.length else from
+            if (to > from) return new.copy(text = s.removeRange(from, to), selection = TextRange(pos - (to - from)))
+        }
     }
     return new
 }
@@ -254,6 +282,17 @@ private fun AnnotatedString.Builder.styleInline(s: String, off: Int, acc: Color)
         }
         addStyle(st2, s0, e0); addStyle(SpanStyle(color = Sb.mute), s0, s0 + mk); addStyle(SpanStyle(color = Sb.mute), e0 - mk, e0)
         styleInline(innerOf(g), s0 + mk, acc)
+    }
+}
+
+/** {c:ff0000 s:20 u|text}: color, size and underline for the text, the braces and attributes dimmed (they are hidden unless the cursor is in them). */
+private fun AnnotatedString.Builder.styleSpans(s: String, off: Int) {
+    for (m in SPAN_RE.findAll(s)) {
+        val a = parseSpanAttrs(m.groupValues[1]); val s0 = off + m.range.first; val e0 = off + m.range.last + 1
+        val cr = m.groups[2]!!.range; val cs = off + cr.first; val ce = off + cr.last + 1
+        addStyle(SpanStyle(color = a.color?.let { hexColor(it) } ?: Color.Unspecified, fontSize = a.size?.sp ?: TextUnit.Unspecified,
+            textDecoration = if (a.underline) TextDecoration.Underline else null), cs, ce)
+        addStyle(SpanStyle(color = Sb.mute), s0, cs); addStyle(SpanStyle(color = Sb.mute), ce, e0)
     }
 }
 
@@ -366,15 +405,124 @@ private fun TextFieldValue.removeLink(): TextFieldValue {
     return copy(text = text.substring(0, r.first) + label + text.substring(r.last + 1), selection = TextRange(r.first, r.first + label.length))
 }
 
-/** Enter inside a list continues it; Enter on an empty item leaves the list. */
+/** A saved color such as "ff3b30" as a Compose color. */
+fun hexColor(hex: String): Color = Color(0xFF000000L or (hex.toLongOrNull(16) ?: 0L))
+
+/** The prefix (# , - , 1.  and so on) and the layout tags at the start of a line. */
+private fun leadOf(line: String): Pair<String, String> {
+    val prefix = LINE_PREFIXES.firstOrNull { line.startsWith(it) } ?: NUM.find(line)?.value ?: ""
+    return prefix to (LINE_TAGS.find(line.substring(prefix.length))?.value ?: "")
+}
+
+private fun tagString(indent: Int, align: Char) = (if (indent > 0) "{i:$indent}" else "") + (if (align == 'c' || align == 'r') "{a:$align}" else "")
+
+/** Indent level and alignment ('l', 'c' or 'r') written in a line's tags. */
+private fun tagsOf(tags: String): Pair<Int, Char> {
+    val m = LINE_TAGS.find(tags); return (m?.groupValues?.get(1)?.toIntOrNull() ?: 0) to (m?.groupValues?.get(2)?.firstOrNull() ?: 'l')
+}
+
+/** Indent and alignment of the line the selection starts on. */
+private fun TextFieldValue.lineState(): Pair<Int, Char> {
+    val s = text; val pos = selection.start.coerceIn(0, s.length)
+    val ls = s.lastIndexOf('\n', pos - 1) + 1; val le = s.indexOf('\n', pos).let { if (it < 0) s.length else it }
+    return tagsOf(leadOf(s.substring(ls, le)).second)
+}
+
+/** Changes the indent and alignment of every line the selection touches. change gets (indent, align) and returns the new pair. */
+private fun TextFieldValue.changeLines(change: (Int, Char) -> Pair<Int, Char>): TextFieldValue {
+    val s = text; val a = minOf(selection.start, selection.end).coerceIn(0, s.length); val b = maxOf(selection.start, selection.end).coerceIn(0, s.length)
+    val lines = s.split("\n"); val out = StringBuilder(); val mods = mutableListOf<Pair<Int, Int>>() // (end of old tags, size change)
+    var i = 0
+    for ((idx, line) in lines.withIndex()) {
+        val le = i + line.length
+        if (le >= a && i <= b) {
+            val (pfx, tags) = leadOf(line); val (ind, al) = tagsOf(tags)
+            val (ni, na) = change(ind, al); val nt = tagString(ni.coerceIn(0, 4), na)
+            if (nt != tags) {
+                out.append(pfx).append(nt).append(line.substring(pfx.length + tags.length)); mods += (i + pfx.length + tags.length) to (nt.length - tags.length)
+            } else out.append(line)
+        } else out.append(line)
+        if (idx < lines.size - 1) out.append('\n')
+        i = le + 1
+    }
+    if (mods.isEmpty()) return this
+    fun shift(o: Int) = o + mods.filter { o >= it.first }.sumOf { it.second }
+    return copy(text = out.toString(), selection = TextRange(shift(selection.start), shift(selection.end)))
+}
+
+private fun TextFieldValue.setAlign(c: Char) = changeLines { i, _ -> i to c }
+private fun TextFieldValue.indentBy(d: Int) = changeLines { i, a -> (i + d) to a }
+
+/** A run of a line: plain text or one {..|..} span. from..to is the whole run, cs..ce the text inside it. */
+private class Atom(val from: Int, val to: Int, val cs: Int, val ce: Int, val attrs: SpanAttrs)
+
+private fun atoms(line: String): List<Atom> {
+    val out = mutableListOf<Atom>(); var p = 0
+    for (m in SPAN_RE.findAll(line)) {
+        if (m.range.first > p) out += Atom(p, m.range.first, p, m.range.first, SpanAttrs())
+        val c = m.groups[2]!!.range
+        out += Atom(m.range.first, m.range.last + 1, c.first, c.last + 1, parseSpanAttrs(m.groupValues[1])); p = m.range.last + 1
+    }
+    if (p < line.length) out += Atom(p, line.length, p, line.length, SpanAttrs())
+    return out
+}
+
+private fun wrapSpan(text: String, a: SpanAttrs) = if (text.isEmpty() || a.none) text else "{${a.tag()}|$text}"
+
+/** Rewrites one line so that f is applied to the formatting of the text in x until y. Returns the new line and the new x and y, or null if nothing changed. */
+private fun rewriteLine(line: String, x: Int, y: Int, f: (SpanAttrs) -> SpanAttrs): Triple<String, Int, Int>? {
+    val sb = StringBuilder(); var nx = -1; var ny = -1
+    for (at in atoms(line)) {
+        val lo = maxOf(at.cs, x); val hi = minOf(at.ce, y)
+        if (lo >= hi) { sb.append(line, at.from, at.to); continue }
+        val mid = line.substring(lo, hi)
+        if ('}' in mid) return null
+        val na = f(at.attrs); val head = if (na.none) 0 else na.tag().length + 2
+        sb.append(wrapSpan(line.substring(at.cs, lo), at.attrs))
+        if (nx < 0) nx = sb.length + head
+        ny = sb.length + head + mid.length
+        sb.append(wrapSpan(mid, na)).append(wrapSpan(line.substring(hi, at.ce), at.attrs))
+    }
+    return if (nx < 0) null else Triple(sb.toString(), nx, ny)
+}
+
+/** Colors, resizes or underlines the text from a to b by changing its {..|..} spans. Line prefixes are never wrapped. The result selects the same text. */
+private fun TextFieldValue.formatSpan(a: Int, b: Int, f: (SpanAttrs) -> SpanAttrs): TextFieldValue {
+    val lines = text.split("\n"); val out = StringBuilder(); var ns = -1; var ne = -1; var i = 0
+    for ((idx, line) in lines.withIndex()) {
+        val le = i + line.length; val (pfx, tags) = leadOf(line)
+        val x = maxOf(maxOf(a, i) - i, pfx.length + tags.length); val y = minOf(b, le) - i
+        val r = if (y > x) rewriteLine(line, x, y, f) else null
+        if (r != null) { if (ns < 0) ns = out.length + r.second; ne = out.length + r.third; out.append(r.first) } else out.append(line)
+        if (idx < lines.size - 1) out.append('\n')
+        i = le + 1
+    }
+    return if (ns < 0) this else copy(text = out.toString(), selection = TextRange(ns, ne))
+}
+
+/** The formatting of every run of text between a and b (plain text counts as no formatting). */
+private fun TextFieldValue.attrsIn(a: Int, b: Int): List<SpanAttrs> {
+    val res = mutableListOf<SpanAttrs>(); var i = 0
+    for (line in text.split("\n")) {
+        val le = i + line.length; val (pfx, tags) = leadOf(line)
+        val x = maxOf(maxOf(a, i) - i, pfx.length + tags.length); val y = minOf(b, le) - i
+        if (y > x) for (at in atoms(line)) if (maxOf(at.cs, x) < minOf(at.ce, y)) res += at.attrs
+        i = le + 1
+    }
+    return res
+}
+
+/** Enter inside a list continues it; Enter on an empty item leaves the list. A new line keeps the indent and alignment of the one above. */
 private fun continueList(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
     if (new.text.length != old.text.length + 1 || new.selection.start == 0 || new.text[new.selection.start - 1] != '\n') return new
     val s = new.text; val nl = new.selection.start - 1
     val ls = s.lastIndexOf('\n', nl - 1) + 1; val line = s.substring(ls, nl)
     val numM = NUM.find(line)
-    val prefix = numM?.value ?: listOf("- [x] ", "- [ ] ", "- ").firstOrNull { line.startsWith(it) } ?: return new
-    if (line.length == prefix.length) return new.copy(text = s.substring(0, ls) + s.substring(nl), selection = TextRange(ls + 1))
-    val cont = when { numM != null -> "${numM.groupValues[1].toInt() + 1}. "; prefix == "- [x] " -> "- [ ] "; else -> prefix }
+    val listPfx = numM?.value ?: listOf("- [x] ", "- [ ] ", "- ").firstOrNull { line.startsWith(it) }
+    val (anyPfx, tags) = leadOf(line)
+    if (listPfx == null && tags.isEmpty()) return new
+    if (line.length == anyPfx.length + tags.length) return new.copy(text = s.substring(0, ls) + s.substring(nl), selection = TextRange(ls + 1))
+    val cont = when { numM != null -> "${numM.groupValues[1].toInt() + 1}. "; listPfx == "- [x] " -> "- [ ] "; listPfx != null -> listPfx; else -> "" } + tags
     return new.copy(text = s.substring(0, nl + 1) + cont + s.substring(nl + 1), selection = TextRange(nl + 1 + cont.length))
 }
 
@@ -444,10 +592,10 @@ private fun RowScope.BarCell(on: Boolean, desc: String, holdLabel: String? = nul
 
 private fun headingLabel(prefix: String?) = when (prefix) { "# " -> "H1"; "## " -> "H2"; else -> "H" }
 
-/** Editor A, the default: a round + button (quote, divider), headings, lists and undo. Inline formatting is in the selection bubble. */
+/** Editor A, the default: a round + button (quote, divider), heading, checklist, text options, font color, font size and undo. Inline formatting is also in the selection bubble. */
 @Composable
-private fun BubbleBar(prefix: String?, canUndo: Boolean, canRedo: Boolean, onQuote: () -> Unit, onDivider: () -> Unit, onHeading: () -> Unit,
-                      onBullet: () -> Unit, onNumber: () -> Unit, onCheck: () -> Unit, onUndo: () -> Unit, onRedo: () -> Unit) {
+private fun BubbleBar(prefix: String?, canUndo: Boolean, canRedo: Boolean, sizeLabel: String, colorBar: Color, panel: Int, onPanel: (Int) -> Unit,
+                      onQuote: () -> Unit, onDivider: () -> Unit, onHeading: () -> Unit, onCheck: () -> Unit, onUndo: () -> Unit, onRedo: () -> Unit) {
     Bar(floating = false) {
         var menu by remember { mutableStateOf(false) }
         Box {
@@ -458,9 +606,20 @@ private fun BubbleBar(prefix: String?, canUndo: Boolean, canRedo: Boolean, onQuo
             }
         }
         BarCell(prefix == "# " || prefix == "## ", "Heading", onClick = onHeading) { c -> Text(headingLabel(prefix), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = c) }
-        BarCell(prefix == "- ", "Bullet list", onClick = onBullet) { c -> Ic("list", 22.dp, c) }
-        BarCell(prefix == "1. ", "Numbered list", onClick = onNumber) { c -> Ic("numbered", 22.dp, c) }
         BarCell(prefix == "- [ ] " || prefix == "- [x] ", "Checklist", onClick = onCheck) { c -> Ic("check", 22.dp, c) }
+        BarCell(panel == 1, "Text options", onClick = { onPanel(if (panel == 1) 0 else 1) }) { c -> Text("Aa", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = c) }
+        BarCell(panel == 2, "Font color", onClick = { onPanel(if (panel == 2) 0 else 2) }) { c ->
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("A", fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = c)
+                Box(Modifier.padding(top = 2.dp).width(18.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(colorBar))
+            }
+        }
+        BarCell(panel == 3, "Font size", onClick = { onPanel(if (panel == 3) 0 else 3) }) { c ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(sizeLabel, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = c)
+                Text("▾", fontSize = 11.sp, color = c)
+            }
+        }
         BarCell(false, "Undo", "Redo", onRedo, onUndo) { c -> Ic("undo", 22.dp, if (canUndo) c else if (canRedo) Sb.mute else Sb.mute.copy(alpha = .4f)) }
     }
 }
@@ -528,6 +687,143 @@ private fun MenuRow(icon: String, label: String, sub: String? = null, tint: Colo
 @Composable
 private fun MenuDivider() = Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(Sb.menuLine))
 
+/** The floating card the toolbar's text options, color and size open above the bar. Same look as the 3-dot menu. */
+@Composable
+private fun PanelCard(title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    Column(Modifier.fillMaxWidth().shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Sb.menu)
+        .padding(start = 20.dp, end = 12.dp, top = 8.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, color = Sb.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, fontFamily = LocalFonts.current.second, modifier = Modifier.weight(1f))
+            Box(Modifier.size(44.dp).clip(CircleShape).tap("Close") { onClose() }, Alignment.Center) { Ic("close", 22.dp, Sb.ink) }
+        }
+        Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+/** A rounded group of option buttons inside a panel. */
+@Composable
+private fun OptGroup(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) =
+    Row(modifier.clip(RoundedCornerShape(18.dp)).background(Sb.ink.copy(alpha = .07f)).padding(4.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+
+/** One option button; on tints it with the accent. */
+@Composable
+private fun RowScope.OptBtn(on: Boolean, desc: String, enabled: Boolean = true, onClick: () -> Unit, content: @Composable (Color) -> Unit) {
+    val acc = LocalSb.current.acc
+    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).background(if (on) acc.copy(alpha = .2f) else Color.Transparent)
+        .alpha(if (enabled) 1f else .35f).semantics { selected = on }.tap(desc) { if (enabled) onClick() }, Alignment.Center) { content(if (on) acc else Sb.ink) }
+}
+
+/** Text options: lists, alignment, bold, italic, underline, strikethrough, indent and outdent. */
+@Composable
+private fun TextOptionsPanel(prefix: String?, bold: Boolean, italic: Boolean, underline: Boolean, strike: Boolean, align: Char, indent: Int,
+                             onBullet: () -> Unit, onNumber: () -> Unit, onAlign: (Char) -> Unit, onInline: (String) -> Unit, onUnderline: () -> Unit,
+                             onIndent: (Int) -> Unit, onClose: () -> Unit) {
+    PanelCard("Text options", onClose) {
+        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+            OptGroup(Modifier.weight(2f)) {
+                OptBtn(prefix == "- ", "Bullet list", onClick = onBullet) { c -> Ic("list", 22.dp, c) }
+                OptBtn(prefix == "1. ", "Numbered list", onClick = onNumber) { c -> Ic("numbered", 22.dp, c) }
+            }
+            OptGroup(Modifier.weight(3f)) {
+                OptBtn(align == 'l', "Align left", onClick = { onAlign('l') }) { c -> Ic("alignl", 22.dp, c) }
+                OptBtn(align == 'c', "Align center", onClick = { onAlign('c') }) { c -> Ic("alignc", 22.dp, c) }
+                OptBtn(align == 'r', "Align right", onClick = { onAlign('r') }) { c -> Ic("alignr", 22.dp, c) }
+            }
+        }
+        Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+            OptGroup(Modifier.weight(4f)) {
+                OptBtn(bold, "Bold", onClick = { onInline("**") }) { c -> Text("B", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = c) }
+                OptBtn(italic, "Italic", onClick = { onInline("*") }) { c -> Text("I", fontSize = 18.sp, fontWeight = FontWeight.Medium, fontStyle = FontStyle.Italic, color = c) }
+                OptBtn(underline, "Underline", onClick = onUnderline) { c -> Text("U", fontSize = 18.sp, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.Underline, color = c) }
+                OptBtn(strike, "Strikethrough", onClick = { onInline("~~") }) { c -> Text("S", fontSize = 18.sp, fontWeight = FontWeight.Medium, textDecoration = TextDecoration.LineThrough, color = c) }
+            }
+            OptGroup(Modifier.weight(2f)) {
+                OptBtn(false, "Indent", enabled = indent < 4, onClick = { onIndent(1) }) { c -> Ic("indent", 22.dp, c) }
+                OptBtn(false, "Outdent", enabled = indent > 0, onClick = { onIndent(-1) }) { c -> Ic("outdent", 22.dp, c) }
+            }
+        }
+    }
+}
+
+private val SIZE_CHOICES = listOf(12, 14, 16, 18, 20, 24, 28, 32, 40, 48)
+
+/** Font size: pick a size for the selected text, or go back to the normal size. */
+@Composable
+private fun SizePanel(current: Int?, normal: Int, onPick: (Int?) -> Unit, onClose: () -> Unit) {
+    val acc = LocalSb.current.acc
+    PanelCard("Font size", onClose) {
+        SIZE_CHOICES.chunked(5).forEach { row ->
+            Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
+                row.forEach { n ->
+                    val on = current == n
+                    Box(Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(14.dp)).background(if (on) acc.copy(alpha = .2f) else Sb.ink.copy(alpha = .07f))
+                        .semantics { selected = on }.tap("Size $n") { onPick(n) }, Alignment.Center) {
+                        Text("$n", fontSize = 17.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = if (on) acc else Sb.ink)
+                    }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(14.dp)).background(if (current == null) acc.copy(alpha = .2f) else Sb.ink.copy(alpha = .07f))
+            .semantics { selected = current == null }.tap("Normal size") { onPick(null) }, Alignment.Center) {
+            Text("Normal ($normal)", fontSize = 15.sp, color = if (current == null) acc else Sb.ink)
+        }
+    }
+}
+
+private val COLOR_CHOICES = listOf("ff3b30", "ff9500", "ffcc00", "34c759", "00c7be", "0a84ff", "5e5ce6", "bf5af2", "ff2d92", "ffffff", "8e8e93", "000000")
+
+private fun shadeColor(hue: Float, t: Float) = if (t < .5f) Color.hsv(hue, 1f, t * 2f) else Color.hsv(hue, 1f - (t - .5f) * 2f, 1f)
+private fun Color.hex6() = "%02x%02x%02x".format((red * 255).roundToInt(), (green * 255).roundToInt(), (blue * 255).roundToInt())
+
+/** A bar with a gradient and a round handle. onChange runs while dragging, onDone when the finger lifts. */
+@Composable
+private fun GradientSlider(value: Float, brush: Brush, handle: Color, onChange: (Float) -> Unit, onDone: () -> Unit) {
+    var w by remember { mutableIntStateOf(1) }
+    val change by rememberUpdatedState(onChange); val done by rememberUpdatedState(onDone)
+    Box(Modifier.fillMaxWidth().height(34.dp).onSizeChanged { w = it.width.coerceAtLeast(1) }.clip(RoundedCornerShape(17.dp)).background(brush)
+        .pointerInput(Unit) {
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                change((down.position.x / size.width).coerceIn(0f, 1f)); down.consume()
+                do {
+                    val ev = awaitPointerEvent(); val c = ev.changes.firstOrNull() ?: break
+                    change((c.position.x / size.width).coerceIn(0f, 1f)); c.consume()
+                } while (ev.changes.any { it.pressed })
+                done()
+            }
+        }) {
+        Box(Modifier.offset { IntOffset((value * (w - 34.dp.roundToPx())).roundToInt(), 0) }.size(34.dp).padding(3.dp).clip(CircleShape).background(handle).border(2.dp, Color.White, CircleShape))
+    }
+}
+
+/** Font color: a row of ready colors, plus a hue bar and a light-to-dark bar for any other color. */
+@Composable
+private fun ColorPanel(current: String?, onPick: (String?) -> Unit, onClose: () -> Unit) {
+    val acc = LocalSb.current.acc
+    var hue by remember { mutableFloatStateOf(210f) }; var shade by remember { mutableFloatStateOf(.5f) }
+    PanelCard("Font color", onClose) {
+        COLOR_CHOICES.chunked(6).forEach { row ->
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                row.forEach { hex ->
+                    val on = current == hex
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(hexColor(hex)).border(if (on) 3.dp else 1.dp, if (on) acc else Sb.ink.copy(alpha = .25f), CircleShape)
+                        .semantics { selected = on }.tap("Color $hex") { onPick(hex) })
+                }
+            }
+        }
+        GradientSlider(hue / 360f, Brush.horizontalGradient(listOf(0f, 60f, 120f, 180f, 240f, 300f, 360f).map { Color.hsv(it % 360f, 1f, 1f) }), Color.hsv(hue, 1f, 1f),
+            { hue = it * 360f }, { onPick(shadeColor(hue, shade).hex6()) })
+        GradientSlider(shade, Brush.horizontalGradient(listOf(Color.Black, Color.hsv(hue, 1f, 1f), Color.White)), shadeColor(hue, shade),
+            { shade = it }, { onPick(shadeColor(hue, shade).hex6()) })
+        Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(14.dp)).background(if (current == null) acc.copy(alpha = .2f) else Sb.ink.copy(alpha = .07f))
+            .semantics { selected = current == null }.tap("Default color") { onPick(null) }, Alignment.Center) {
+            Text("Default color", fontSize = 15.sp, color = if (current == null) acc else Sb.ink)
+        }
+    }
+}
+
+
 /** A normal notes editor: autosaves as you type, formatting toolbar, lists continue on Enter, undo and redo. id == 0 starts a new note. */
 @Composable
 fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
@@ -550,12 +846,13 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val scroll = rememberScrollState(); var viewportH by remember { mutableIntStateOf(0) }; var fieldTop by remember { mutableFloatStateOf(0f) }
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }; var focused by remember { mutableStateOf(false) }
     val activeSel = if (focused) body.selection else null
-    val view = remember(body.text, activeSel, t.acc, Sb.ink) { mdRender(body.text, activeSel, t.acc) }
+    val live = list.firstOrNull { it.id == curId }
+    val baseLine = pageLine((live ?: existing)?.density ?: 1).value
+    val view = remember(body.text, activeSel, t.acc, Sb.ink, baseLine) { mdRender(body.text, activeSel, t.acc, baseLine) }
     val viewNow by rememberUpdatedState(view)
-    val md = remember(view) { VisualTransformation { s -> if (s.text == view.source) view.out else mdRender(s.text, null, t.acc).out } }
+    val md = remember(view) { VisualTransformation { s -> if (s.text == view.source) view.out else mdRender(s.text, null, t.acc, baseLine).out } }
     val clipboard = LocalClipboardManager.current
     var linkSheet by remember { mutableStateOf<TextRange?>(null) }; var linkUrl by remember { mutableStateOf("") }
-    val live = list.firstOrNull { it.id == curId }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> uris.forEach { u -> vm.importImage(u) { imgs = imgs + it } } }
     fun addImage() = pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     fun doUndo() { if (undo.isNotEmpty()) { redo.addLast(body); body = undo.removeLast() } }
@@ -574,6 +871,29 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
         body = next
     }
 
+    var panel by remember { mutableIntStateOf(0) }   // 0 none, 1 text options, 2 font color, 3 font size
+    var lastColor by remember { mutableStateOf<String?>(null) }
+    /** The text a formatting button acts on: the selection, or the word at the cursor when nothing is selected. */
+    fun target(): Pair<Int, Int>? {
+        val s = body.text; var a = minOf(body.selection.start, body.selection.end).coerceIn(0, s.length); var b = maxOf(body.selection.start, body.selection.end).coerceIn(0, s.length)
+        if (a == b) {
+            var x = a; var y = a
+            while (x > 0 && s[x - 1].isLetterOrDigit()) x--
+            while (y < s.length && s[y].isLetterOrDigit()) y++
+            if (x == y) return null
+            a = x; b = y
+        }
+        return a to b
+    }
+    fun applySpan(f: (SpanAttrs) -> SpanAttrs) { val (a, b) = target() ?: return; edit(body.formatSpan(a, b, f)) }
+    fun inlineOnTarget(marker: String) {
+        val tg = target(); edit((if (tg != null) body.copy(selection = TextRange(tg.first, tg.second)) else body).toggleInline(marker))
+    }
+    fun toggleUnderline() {
+        val (a, b) = target() ?: return
+        val all = body.attrsIn(a, b).let { l -> l.isNotEmpty() && l.all { it.underline } }
+        edit(body.formatSpan(a, b) { it.copy(underline = !all) })
+    }
     /** Ticks or unticks the checklist line that starts at saved offset ls. */
     fun toggleCheck(ls: Int) {
         val s = body.text; if (ls + 4 > s.length) return
@@ -621,6 +941,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     fun leave() { if (leaving) return; leaving = true; scope.launch { flush(); nav.popBackStack() } }
     BackHandler { leave() }
     BackHandler(menu) { menu = false }
+    BackHandler(panel != 0) { panel = 0 }
 
     Box(Modifier.fillMaxSize()) {
     Scaffold(containerColor = t.paper) { pad ->
@@ -705,11 +1026,32 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                     InputBox { Field(tags, { tags = it }, "Tags, separated by commas", 15.sp, headFont()) }
                 }
             }
-            if (editorStyle == 0) BubbleBar(body.linePrefix(), undo.isNotEmpty(), redo.isNotEmpty(),
-                { edit(body.toggleLine("> ")) }, { edit(body.insertDivider()) }, { edit(body.cycleHeading()) }, { edit(body.toggleLine("- ")) },
-                { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) }, { doUndo() }, { doRedo() })
+            val tg = target(); val attrNow = tg?.let { (a, b) -> body.attrsIn(a, b) }.orEmpty()
+            val sizeNow = attrNow.firstOrNull()?.size; val colorNow = attrNow.firstOrNull()?.color
+            if (editorStyle == 0) BubbleBar(body.linePrefix(), undo.isNotEmpty(), redo.isNotEmpty(), (sizeNow ?: 17).toString(), (lastColor ?: colorNow)?.let { hexColor(it) } ?: t.acc, panel, { panel = it },
+                { edit(body.toggleLine("> ")) }, { edit(body.insertDivider()) }, { edit(body.cycleHeading()) }, { edit(body.toggleLine("- [ ] ")) }, { doUndo() }, { doRedo() })
             else PillBar(body, { m -> edit(body.toggleInline(m)) }, { edit(body.cycleHeading()) }, { edit(body.toggleLine("- ")) },
                 { edit(body.toggleLine("1. ")) }, { edit(body.toggleLine("- [ ] ")) })
+        }
+    }
+    if (panel != 0 && editorStyle == 0) {
+        // Floats above the bottom bar, whether or not the keyboard is open. A tap outside closes it; the bar stays tappable.
+        val barGap = WindowInsets.ime.union(WindowInsets.navigationBars)
+        Box(Modifier.fillMaxSize().windowInsetsPadding(barGap).padding(bottom = 76.dp)) {
+            Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { panel = 0 })
+            Box(Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 6.dp)) {
+                val tg2 = target(); val attrs2 = tg2?.let { (a, b) -> body.attrsIn(a, b) }.orEmpty()
+                when (panel) {
+                    1 -> {
+                        val (ind, al) = body.lineState()
+                        TextOptionsPanel(body.linePrefix(), body.enclosing("**") != null, body.enclosing("*") != null, attrs2.isNotEmpty() && attrs2.all { it.underline }, body.enclosing("~~") != null, al, ind,
+                            { edit(body.toggleLine("- ")) }, { edit(body.toggleLine("1. ")) }, { c -> edit(body.setAlign(c)) }, { m -> inlineOnTarget(m) }, { toggleUnderline() },
+                            { d -> edit(body.indentBy(d)) }, { panel = 0 })
+                    }
+                    2 -> ColorPanel(attrs2.firstOrNull()?.color, { hex -> if (hex != null) lastColor = hex; applySpan { it.copy(color = hex) } }, { panel = 0 })
+                    else -> SizePanel(attrs2.firstOrNull()?.size, 17, { n -> applySpan { it.copy(size = n) } }, { panel = 0 })
+                }
+            }
         }
     }
     AnimatedVisibility(menu, Modifier.fillMaxSize(), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {

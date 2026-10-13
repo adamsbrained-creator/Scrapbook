@@ -12,6 +12,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -65,9 +67,9 @@ private fun date(ms: Long) = SimpleDateFormat("EEEE, d MMMM", Locale.getDefault(
 @Composable private fun Title(text: String, size: TextUnit = 26.sp, align: TextAlign = TextAlign.Start) =
     Text(text, fontFamily = LocalPage.current.family ?: headFont(), fontWeight = FontWeight.SemiBold, fontSize = size, lineHeight = size * 1.15f, textAlign = align, modifier = Modifier.semantics { heading() })
 private val NUM_LINE = Regex("^(\\d+)\\. ")
-private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|\\[([^\\]\\n]+)\\]\\(((?:https?|readest)://[^)\\s]+)\\)|https?://[^\\s]+")
+private val RICH = Regex("\\*\\*(.+?)\\*\\*|~~(.+?)~~|==(.+?)==|\\*(.+?)\\*|\\[([^\\]\\n]+)\\]\\(((?:https?|readest)://[^)\\s]+)\\)|https?://[^\\s]+|\\{((?:c:[0-9a-fA-F]{6}|s:\\d{1,3}|u)(?: (?:c:[0-9a-fA-F]{6}|s:\\d{1,3}|u)){0,2})\\|(.+?)\\}")
 
-/** Inline formatting (bold, italic, strike, highlight), [text](url) links and tappable web links. */
+/** Inline formatting (bold, italic, strike, highlight, color, size, underline), [text](url) links and tappable web links. */
 @Composable
 private fun linkify(text: String): AnnotatedString {
     val acc = LocalSb.current.acc
@@ -91,6 +93,11 @@ private fun AnnotatedString.Builder.appendRich(text: String, acc: Color, openApp
             g[2].isNotEmpty() -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendRich(g[2], acc, openApp) }
             g[3].isNotEmpty() -> withStyle(SpanStyle(background = acc.copy(alpha = .3f))) { appendRich(g[3], acc, openApp) }
             g[4].isNotEmpty() -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendRich(g[4], acc, openApp) }
+            g[7].isNotEmpty() -> {
+                val a = parseSpanAttrs(g[7])
+                withStyle(SpanStyle(color = a.color?.let { hexColor(it) } ?: Color.Unspecified, fontSize = a.size?.sp ?: TextUnit.Unspecified,
+                    textDecoration = if (a.underline) TextDecoration.Underline else null)) { appendRich(g[8], acc, openApp) }
+            }
             g[5].isNotEmpty() -> {
                 val style = TextLinkStyles(SpanStyle(color = acc, textDecoration = TextDecoration.Underline))
                 val link = if (g[6].startsWith("readest://")) LinkAnnotation.Clickable("app-link", style) { openApp(g[6]) } else LinkAnnotation.Url(g[6], style)
@@ -119,36 +126,46 @@ private fun Body(text: String) {
     val st = LocalPage.current; val toggle = LocalToggle.current; val acc = LocalSb.current.acc
     val fam = st.family ?: headFont(); val lineDp = with(LocalDensity.current) { st.line.toDp() }
     Column {
-        text.lines().forEach { l ->
+        text.lines().forEach { raw ->
+            // Layout tags sit after the prefix: {i:2} indents, {a:c} / {a:r} centers or right-aligns.
+            val pfx = LINE_PREFIX_RE.find(raw)?.value ?: ""
+            val tm = LINE_TAGS.find(raw.substring(pfx.length))!!
+            val l = pfx + raw.substring(pfx.length + tm.value.length)
+            val indent = tm.groupValues[1].toIntOrNull() ?: 0
+            val ta = when (tm.groupValues[2]) { "c" -> TextAlign.Center; "r" -> TextAlign.End; else -> TextAlign.Unspecified }
+            val big = SPAN_RE.findAll(l).maxOfOrNull { parseSpanAttrs(it.groupValues[1]).size ?: 0 } ?: 0
+            val lh = if (big * 1.3f > st.line.value) (big * 1.3f).sp else st.line
+            Box(Modifier.padding(start = (24 * indent).dp)) { ProvideTextStyle(LocalTextStyle.current.copy(textAlign = ta)) {
             when {
-                l.startsWith("## ") -> Text(linkify(l.drop(3)), fontFamily = fam, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = st.line)
-                l.startsWith("# ") -> Text(linkify(l.drop(2)), fontFamily = fam, fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = st.line)
+                l.startsWith("## ") -> Text(linkify(l.drop(3)), fontFamily = fam, fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = lh)
+                l.startsWith("# ") -> Text(linkify(l.drop(2)), fontFamily = fam, fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = lh)
                 l.startsWith("> ") -> Row(Modifier.height(IntrinsicSize.Min)) {
                     Box(Modifier.width(3.dp).fillMaxHeight().background(acc)); Spacer(Modifier.width(10.dp))
-                    Text(linkify(l.drop(2)), fontFamily = fam, fontStyle = FontStyle.Italic, fontSize = 17.sp, lineHeight = st.line)
+                    Text(linkify(l.drop(2)), Modifier.weight(1f), fontFamily = fam, fontStyle = FontStyle.Italic, fontSize = 17.sp, lineHeight = lh)
                 }
                 l == "---" -> Box(Modifier.fillMaxWidth().height(lineDp), Alignment.Center) { Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line)) }
                 l.startsWith("- [ ] ") || l.startsWith("- [x] ") -> {
                     val done = l.startsWith("- [x] ")
-                    Row(Modifier.fillMaxWidth().tap { toggle(l, (if (done) "- [ ] " else "- [x] ") + l.drop(6)) }, Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().tap { toggle(raw, (if (done) "- [ ] " else "- [x] ") + raw.drop(6)) }, Arrangement.spacedBy(10.dp), Alignment.CenterVertically) {
                         Box(Modifier.size(16.dp).clip(RoundedCornerShape(4.dp)).background(if (done) acc else Color.Transparent).border(1.5.dp, acc, RoundedCornerShape(4.dp)))
-                        Text(linkify(l.drop(6)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line, color = if (done) Sb.mute else Sb.ink, textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None)
+                        Text(linkify(l.drop(6)), Modifier.weight(1f), fontFamily = fam, fontSize = 17.sp, lineHeight = lh, color = if (done) Sb.mute else Sb.ink, textDecoration = if (done) TextDecoration.LineThrough else TextDecoration.None)
                     }
                 }
                 NUM_LINE.containsMatchIn(l) -> {
                     val nm = NUM_LINE.find(l)!!
                     Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(8.dp)) {
-                        Text(nm.groupValues[1] + ".", fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
-                        Text(linkify(l.drop(nm.value.length)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
+                        Text(nm.groupValues[1] + ".", fontFamily = fam, fontSize = 17.sp, lineHeight = lh)
+                        Text(linkify(l.drop(nm.value.length)), Modifier.weight(1f), fontFamily = fam, fontSize = 17.sp, lineHeight = lh)
                     }
                 }
                 l.startsWith("- ") -> Row(Modifier.fillMaxWidth(), Arrangement.spacedBy(10.dp)) {
-                    Text("•", fontSize = 17.sp, lineHeight = st.line, color = acc, fontWeight = FontWeight.Bold)
-                    Text(linkify(l.drop(2)), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
+                    Text("•", fontSize = 17.sp, lineHeight = lh, color = acc, fontWeight = FontWeight.Bold)
+                    Text(linkify(l.drop(2)), Modifier.weight(1f), fontFamily = fam, fontSize = 17.sp, lineHeight = lh)
                 }
                 l.isBlank() -> Spacer(Modifier.height(lineDp))
-                else -> Text(linkify(l), fontFamily = fam, fontSize = 17.sp, lineHeight = st.line)
+                else -> Text(linkify(l), fontFamily = fam, fontSize = 17.sp, lineHeight = lh)
             }
+            } }
         }
     }
 }
