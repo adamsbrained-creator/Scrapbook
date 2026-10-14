@@ -10,8 +10,10 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.DropdownMenuItem
@@ -297,37 +299,40 @@ fun ItemScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     Box(Modifier.fillMaxSize()) {
         Scaffold(containerColor = t.paper) { pad ->
             if (item != null) Column(Modifier.fillMaxSize().padding(pad).background(pageTint(item.color) ?: Color.Transparent)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(48.dp).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 28.dp, Sb.ink) }
-                    Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                        Text(item.collection, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-                        Text("${item.kind.label} · ${date(item.savedAt)}", fontSize = 11.sp, color = Sb.mute, maxLines = 1)
+                // Same header as the editor: round back button, a big line with a small line under it, and one pill with the actions.
+                // The page below already shows the note's title, so the header names the box and the kind and date instead.
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), Arrangement.spacedBy(12.dp), Alignment.CenterVertically) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(Sb.card).tap("Go back") { nav.popBackStack() }, Alignment.Center) { Ic("back", 26.dp, Sb.ink) }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Text(item.collection, color = Sb.ink, fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.2).sp, fontFamily = headFont(), fontWeight = FontWeight.Medium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${item.kind.label} · ${date(item.savedAt)}", fontSize = 12.5.sp, lineHeight = 16.sp, color = Sb.mute, fontFamily = LocalFonts.current.second, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Box(Modifier.size(44.dp).tap("Edit") { if (nav.previousBackStackEntry?.destination?.route == "edit/{id}") nav.popBackStack() else nav.navigate("edit/${item.id}") }, Alignment.Center) { Ic("edit", 24.dp, t.acc) }
-                    Box(Modifier.size(44.dp).tap("Share") {
-                        ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, item.title); putExtra(Intent.EXTRA_TEXT, item.title + "\n\n" + item.body)
-                        }, "Share scrap"))
-                    }, Alignment.Center) { Ic("share", 24.dp, Sb.ink) }
-                    Box {
-                        Box(Modifier.size(44.dp).tap("More options") { menu = true }, Alignment.Center) { Ic("more", 24.dp, Sb.ink) }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text(if (item.pinned) "Unpin" else "Pin") }, onClick = { menu = false; vm.togglePin(item) })
-                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = { menu = false; vm.duplicate(item) { nav.navigate("edit/$it") } })
-                            DropdownMenuItem(text = { Text("Add to box") }, onClick = { menu = false; panel = "move" })
-                            DropdownMenuItem(text = { Text("Tags") }, onClick = { menu = false; panel = "tags" })
-                            DropdownMenuItem(text = { Text("Change layout") }, onClick = { menu = false; nav.navigate("layouts/${item.id}") })
-                            DropdownMenuItem(text = { Text("Page style") }, onClick = { menu = false; sheet = true })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; vm.delete(item); nav.popBackStack("home", false) })
-                        }
+                    Row(Modifier.height(44.dp).clip(CircleShape).background(Sb.card).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        HeaderBtn("Edit", { if (nav.previousBackStackEntry?.destination?.route == "edit/{id}") nav.popBackStack() else nav.navigate("edit/${item.id}") }) { Ic("edit", 22.dp, t.acc) }
+                        HeaderBtn("Share", {
+                            ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, item.title); putExtra(Intent.EXTRA_TEXT, item.title + "\n\n" + item.body)
+                            }, "Share scrap"))
+                        }) { Ic("share", 22.dp, Sb.ink) }
+                        HeaderBtn("More options", { menu = true }) { Ic("more", 22.dp, Sb.ink) }
                     }
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Sb.line))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp)) {
                     CompositionLocalProvider(LocalToggle provides { a, b -> vm.save(item.copy(body = item.body.replaceFirst(a, b))) },
                         LocalCanvas provides { s -> vm.save(item.copy(canvas = s)) }) { ItemPage(item, list) }
                 }
             }
+        }
+        if (item != null) HeaderMenu(menu, { menu = false }) {
+            MenuRow(if (item.pinned) "star" else "starline", if (item.pinned) "Unpin" else "Pin", iconColor = if (item.pinned) t.acc else Sb.ink) { menu = false; vm.togglePin(item) }
+            MenuRow("copy", "Duplicate") { menu = false; vm.duplicate(item) { nav.navigate("edit/$it") } }
+            MenuRow("folder", "Add to box") { menu = false; panel = "move" }
+            MenuRow("tag", "Tags") { menu = false; panel = "tags" }
+            MenuRow("layout", "Change layout") { menu = false; nav.navigate("layouts/${item.id}") }
+            MenuRow("sliders", "Page style") { menu = false; sheet = true }
+            MenuDivider()
+            MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(item); nav.popBackStack("home", false) }
         }
         if (item != null) {
             if (sheet) CustomizeSheet(item, vm) { sheet = false }

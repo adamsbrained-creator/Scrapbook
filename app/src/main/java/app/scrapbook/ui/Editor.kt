@@ -88,7 +88,7 @@ fun Field(v: String, onChange: (String) -> Unit, hint: String, size: TextUnit, f
 }
 
 /** What the editor shows for the raw text: the marks hidden, plus the maps between shown and saved positions. */
-private class MdView(val source: String, val out: TransformedText, val o2t: IntArray, private val lo: IntArray, private val hi: IntArray) {
+private class MdView(val source: String, val out: TransformedText, val o2t: IntArray, private val lo: IntArray, private val hi: IntArray, val hidden: BooleanArray) {
     /** Saved offset for the start of a range: after any hidden opening marks. */
     fun start(t: Int) = hi[t.coerceIn(0, hi.lastIndex)]
     /** Saved offset for the end of a range: before any hidden closing marks. */
@@ -99,10 +99,10 @@ private const val DIVIDER_GLYPHS = "──────────────�
 
 /**
  * Styles the text as you type and hides the markdown marks. Line prefixes (# , ## , > ) are always hidden, bullets and
- * checkboxes are drawn as • ☐ ☑, and inline marks (** ~~ == * and the [ ](url) of a link) disappear until the cursor
- * touches that piece of text. The saved text is never changed; the returned maps translate between saved and shown positions.
+ * checkboxes are drawn as • ☐ ☑, and inline marks (** ~~ == * , {color|size|underline} and the [ ](url) of a link) are
+ * always hidden. The saved text is never changed; the returned maps translate between saved and shown positions.
  */
-private fun mdRender(text: String, sel: TextRange?, acc: Color, baseLine: Float): MdView {
+private fun mdRender(text: String, acc: Color, baseLine: Float): MdView {
     val n = text.length
     val styled = buildAnnotatedString {
         append(text); var i = 0
@@ -133,10 +133,7 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color, baseLine: Float)
     }
 
     // Which saved characters are hidden or swapped for a glyph.
-    val hide = BooleanArray(n); val closing = BooleanArray(n); val repl = arrayOfNulls<Pair<Int, String>>(n)
-    val selA = sel?.let { minOf(it.start, it.end) } ?: 0; val selB = sel?.let { maxOf(it.start, it.end) } ?: 0
-    // Marks come back only while the cursor sits in or next to them; a selection keeps them hidden, so formatting shows at once.
-    fun touches(from: Int, to: Int) = sel != null && sel.collapsed && selA <= to && selB >= from
+    val hide = BooleanArray(n); val closing = BooleanArray(n); val repl = arrayOfNulls<Pair<Int, String>>(n); val mids = mutableListOf<Int>()
     fun hideRun(from: Int, to: Int, isClosing: Boolean) { for (k in from until minOf(to, n)) { hide[k] = true; closing[k] = isClosing } }
     fun inline(s: String, off: Int) {
         for (m in INLINE.findAll(s)) {
@@ -144,30 +141,31 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color, baseLine: Float)
             val mk = if (g[4].isNotEmpty()) 1 else 2; val inner = innerOf(g)
             // "2 * 3 * 4" is not italic: a single * next to a space stays visible.
             val spaced = g[4].isNotEmpty() && (inner.first().isWhitespace() || inner.last().isWhitespace())
-            if (!spaced && !touches(s0, e0)) { hideRun(s0, s0 + mk, false); hideRun(e0 - mk, e0, true) }
+            if (!spaced) { hideRun(s0, s0 + mk, false); hideRun(e0 - mk, e0, true) }
             inline(inner, s0 + mk)
         }
     }
     var i = 0
     for (line in text.split("\n")) {
         val le = i + line.length
-        val (pfx, tags) = leadOf(line); val hasText = line.length > pfx.length + tags.length
+        val (pfx, tags) = leadOf(line)
         when {
-            line.startsWith("## ") || line.startsWith("# ") || line.startsWith("> ") -> if (hasText) hideRun(i, i + pfx.length, false)
+            line.startsWith("## ") || line.startsWith("# ") || line.startsWith("> ") -> hideRun(i, i + pfx.length, false)
             line.startsWith("- [ ] ") -> repl[i] = 5 to "☐"
             line.startsWith("- [x] ") -> repl[i] = 5 to "☑"
             line.startsWith("- ") -> repl[i] = 1 to "•"
-            line == "---" && !touches(i, le) -> repl[i] = 3 to DIVIDER_GLYPHS
+            line == "---" -> repl[i] = 3 to DIVIDER_GLYPHS
         }
         if (tags.isNotEmpty()) hideRun(i + pfx.length, i + pfx.length + tags.length, false)
+        if (line.length > 4) for (m in EMPTY_PAIR.findAll(line)) { hideRun(i + m.range.first, i + m.range.last + 1, false); mids += i + m.range.first + 2 }
         inline(line, i)
         for (m in SPAN_RE.findAll(line)) {
             val s0 = i + m.range.first; val e0 = i + m.range.last + 1; val cr = m.groups[2]!!.range
-            if (!touches(s0, e0)) { hideRun(s0, i + cr.first, false); hideRun(i + cr.last + 1, e0, true) }
+            hideRun(s0, i + cr.first, false); hideRun(i + cr.last + 1, e0, true)
         }
         for (m in LINK.findAll(line)) {
             val s0 = i + m.range.first; val e0 = i + m.range.last + 1
-            if (!touches(s0, e0)) { hideRun(s0, s0 + 1, false); hideRun(s0 + 1 + m.groupValues[1].length, e0, true) }
+            hideRun(s0, s0 + 1, false); hideRun(s0 + 1 + m.groupValues[1].length, e0, true)
         }
         i = le + 1
     }
@@ -196,6 +194,7 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color, baseLine: Float)
     for (j in 0 until n) if (hide[j] && closing[j]) allOpen[o2t[j]] = false
     for (t in 1..m) if (hi[t] < 0) { lo[t] = lo[t - 1]; hi[t] = hi[t - 1] }
     val pick = IntArray(m + 1) { if (allOpen[it]) hi[it] else lo[it] }
+    for (p in mids) if (p <= n) pick[o2t[p]] = p   // the cursor of an empty **|** pair stays between its marks
 
     val shownText = buildAnnotatedString {
         append(shown.toString())
@@ -212,9 +211,10 @@ private fun mdRender(text: String, sel: TextRange?, acc: Color, baseLine: Float)
         override fun originalToTransformed(offset: Int) = o2t[offset.coerceIn(0, n)]
         override fun transformedToOriginal(offset: Int) = pick[offset.coerceIn(0, m)]
     }
-    return MdView(text, TransformedText(shownText, map), o2t, lo, hi)
+    return MdView(text, TransformedText(shownText, map), o2t, lo, hi, hide)
 }
 
+private val EMPTY_PAIR = Regex("\\*\\*\\*\\*|~~~~|====")
 private val CHECK_LINE = Regex("(?m)^- \\[[ x]\\] ")
 
 /** The saved offset of the line start whose ☐/☑ is under the finger, or null. */
@@ -231,10 +231,10 @@ private fun checkboxAt(lay: TextLayoutResult, v: MdView, text: String, p: Offset
 private val PASTED_URL = Regex("^https?://\\S+$")
 
 /**
- * Smart edits on top of plain typing: pasting a web address over selected text makes it a link, and backspace at the
- * start of a list, heading or quote removes the whole (hidden) mark in one go.
+ * Smart edits on top of plain typing: pasting a web address over selected text makes it a link, and backspace never
+ * eats a hidden mark: at the start of a list, heading or quote it removes the whole mark in one go, elsewhere it skips over them.
  */
-private fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue {
+private fun smartEdit(old: TextFieldValue, new: TextFieldValue, view: MdView?): TextFieldValue {
     val os = old.selection; val a = minOf(os.start, os.end); val b = maxOf(os.start, os.end)
     if (a != b && new.selection.collapsed) {
         val ins = new.text.length - (old.text.length - (b - a))
@@ -256,6 +256,17 @@ private fun smartEdit(old: TextFieldValue, new: TextFieldValue): TextFieldValue 
             val from = if (hidden.isNotEmpty()) ls else ls + numPfx.length
             val to = if (hidden.isNotEmpty()) ls + hidden.length else if (tags.isNotEmpty()) from + tags.length else from
             if (to > from) return new.copy(text = s.removeRange(from, to), selection = TextRange(pos - (to - from)))
+        }
+        // A divider is hidden behind a drawn line: backspace right after it removes the whole thing.
+        if (line == "---" && pos == le) return new.copy(text = s.removeRange(ls, le), selection = TextRange(ls))
+        // An empty pair of marks (left by Bold, Italic or Strike with nothing selected) goes in one backspace.
+        for (pair in listOf("****", "~~~~", "====")) if (pos >= 2 && s.startsWith(pair, pos - 2)) return new.copy(text = s.removeRange(pos - 2, pos + 2), selection = TextRange(pos - 2))
+        if (pos >= 1 && pos < s.length && s[pos - 1] == '*' && s[pos] == '*' && (pos < 2 || s[pos - 2] != '*') && (pos + 1 >= s.length || s[pos + 1] != '*'))
+            return new.copy(text = s.removeRange(pos - 1, pos + 1), selection = TextRange(pos - 1))
+        // Hidden marks are never deleted by accident: backspace skips over them and removes the visible character before.
+        if (view != null && view.source == s && pos >= 1 && view.hidden[pos - 1]) {
+            var idx = pos - 1; while (idx >= 0 && view.hidden[idx]) idx--
+            return if (idx < 0) old else new.copy(text = s.removeRange(idx, idx + 1), selection = TextRange(pos - 1))
         }
     }
     return new
@@ -658,21 +669,35 @@ private fun Polaroid(uri: String, kind: Kind, i: Int, onRemove: () -> Unit) {
 
 /** A 40dp round button inside the header's action pill. */
 @Composable
-private fun HeaderBtn(desc: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+internal fun HeaderBtn(desc: String, onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.size(40.dp).clip(CircleShape).tap(desc, onClick), Alignment.Center) { content() }
 }
 
 /** The 3-dot menu surface: 252dp wide, 24dp corners, hanging under the header's top-right corner. */
 @Composable
-private fun MenuPanel(content: @Composable ColumnScope.() -> Unit) {
+internal fun MenuPanel(content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(24.dp)
     Column(Modifier.statusBarsPadding().padding(top = 60.dp, end = 16.dp).width(252.dp)
         .shadow(18.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(Sb.menu).padding(8.dp), content = content)
 }
 
+/** The 3-dot menu of the editor and the reading view: the screen dims and a card drops from the header's top-right corner. Back or a tap outside closes it. */
+@Composable
+internal fun BoxScope.HeaderMenu(open: Boolean, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    BackHandler(open) { onClose() }
+    AnimatedVisibility(open, Modifier.fillMaxSize(), enter = fadeIn(tween(120)), exit = fadeOut(tween(100))) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .5f)).semantics { contentDescription = "Close menu" }
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() })
+    }
+    AnimatedVisibility(open, Modifier.align(Alignment.TopEnd),
+        enter = fadeIn(tween(140)) + scaleIn(tween(160), initialScale = .92f, transformOrigin = TransformOrigin(1f, 0f)), exit = fadeOut(tween(100))) {
+        MenuPanel(content)
+    }
+}
+
 /** One menu row: icon and label, with an optional second line. */
 @Composable
-private fun MenuRow(icon: String, label: String, sub: String? = null, tint: Color = Sb.ink, iconColor: Color = tint, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun MenuRow(icon: String, label: String, sub: String? = null, tint: Color = Sb.ink, iconColor: Color = tint, enabled: Boolean = true, onClick: () -> Unit) {
     val sans = LocalFonts.current.second
     Row(Modifier.fillMaxWidth().height(if (sub != null) 58.dp else 52.dp).clip(RoundedCornerShape(16.dp)).alpha(if (enabled) 1f else .4f)
         .tap(label) { if (enabled) onClick() }.padding(horizontal = 12.dp), Arrangement.spacedBy(14.dp), Alignment.CenterVertically) {
@@ -685,7 +710,7 @@ private fun MenuRow(icon: String, label: String, sub: String? = null, tint: Colo
 }
 
 @Composable
-private fun MenuDivider() = Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(Sb.menuLine))
+internal fun MenuDivider() = Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth().height(1.dp).background(Sb.menuLine))
 
 /** The floating card the toolbar's text options, color and size open above the bar. Same look as the 3-dot menu. */
 @Composable
@@ -845,12 +870,11 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val editorStyle by vm.editorStyle.collectAsState()
     val scroll = rememberScrollState(); var viewportH by remember { mutableIntStateOf(0) }; var fieldTop by remember { mutableFloatStateOf(0f) }
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }; var focused by remember { mutableStateOf(false) }
-    val activeSel = if (focused) body.selection else null
     val live = list.firstOrNull { it.id == curId }
     val baseLine = pageLine((live ?: existing)?.density ?: 1).value
-    val view = remember(body.text, activeSel, t.acc, Sb.ink, baseLine) { mdRender(body.text, activeSel, t.acc, baseLine) }
+    val view = remember(body.text, t.acc, Sb.ink, baseLine) { mdRender(body.text, t.acc, baseLine) }
     val viewNow by rememberUpdatedState(view)
-    val md = remember(view) { VisualTransformation { s -> if (s.text == view.source) view.out else mdRender(s.text, null, t.acc, baseLine).out } }
+    val md = remember(view) { VisualTransformation { s -> if (s.text == view.source) view.out else mdRender(s.text, t.acc, baseLine).out } }
     val clipboard = LocalClipboardManager.current
     var linkSheet by remember { mutableStateOf<TextRange?>(null) }; var linkUrl by remember { mutableStateOf("") }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> uris.forEach { u -> vm.importImage(u) { imgs = imgs + it } } }
@@ -862,7 +886,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
 
     /** Every body change goes through here so undo and redo see it. Quick typing is grouped into one step. */
     fun edit(new: TextFieldValue) {
-        val next = continueList(body, smartEdit(body, new))
+        val next = continueList(body, smartEdit(body, new, viewNow))
         if (next.text != body.text) {
             val now = System.currentTimeMillis()
             if (now - lastPush > 700 || undo.isEmpty()) { undo.addLast(body); if (undo.size > 100) undo.removeFirst() }
@@ -887,6 +911,10 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     }
     fun applySpan(f: (SpanAttrs) -> SpanAttrs) { val (a, b) = target() ?: return; edit(body.formatSpan(a, b, f)) }
     fun inlineOnTarget(marker: String) {
+        // Marks are hidden, so the way out of bold, italic or strike while typing is the same button: it steps past the closing mark.
+        if (body.selection.collapsed && body.text.startsWith(marker, body.selection.start) && body.enclosing(marker) != null) {
+            body = body.copy(selection = TextRange(body.selection.start + marker.length)); return
+        }
         val tg = target(); edit((if (tg != null) body.copy(selection = TextRange(tg.first, tg.second)) else body).toggleInline(marker))
     }
     fun toggleUnderline() {

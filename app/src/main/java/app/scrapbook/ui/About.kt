@@ -169,6 +169,7 @@ private class Release(val title: String, val notes: List<String>)
 /** Newest first. Add a Release at the top when you ship something new. */
 private val RELEASES = listOf(
     Release("Latest", listOf(
+        "A redesigned Settings page: a summary card showing how much of your archive is filed in boxes, icon rows with the current choice, and pickers instead of inline switches.",
         "New editor tools: Text options (lists, alignment, bold, italic, underline, strikethrough, indent), font color with any color you like, and a font size picker.",
         "The editor now hides the markdown marks as you write. Double tap selects a word, triple tap a line, four taps everything. Tap a checkbox to tick it.",
         "Quotes and notes sent from the Paperback app land in a \"Paperback\" box, and the \"Open in Paperback\" link in them opens the book at that passage.",

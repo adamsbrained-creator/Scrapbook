@@ -13,12 +13,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy, close, alignl, alignc, alignr, indent, outdent */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy, close, alignl, alignc, alignr, indent, outdent, tag, palette, accent, page, eye, corner, backup, restore, headsize */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -26,6 +28,10 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
         val st = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
         fun line(x1: Float, y1: Float, x2: Float, y2: Float) = drawLine(color, Offset(x1 * w, y1 * w), Offset(x2 * w, y2 * w), strokeWidth = sw, cap = StrokeCap.Round)
         fun dot(x: Float, y: Float, r: Float) = drawCircle(color, r * w, Offset(x * w, y * w))
+        /** Draws an SVG path written for a 24 by 24 box, stroked like the other icons. */
+        fun svg(d: String) = withTransform({ scale(w / 24f, w / 24f, Offset.Zero) }) {
+            drawPath(PathParser().parsePathString(d).toPath(), color, style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
         when (kind) {
             "menu" -> { line(.15f, .27f, .85f, .27f); line(.15f, .5f, .62f, .5f); line(.15f, .73f, .85f, .73f) }
             "search" -> { drawCircle(color, .26f * w, Offset(.44f * w, .44f * w), style = st); line(.64f, .64f, .85f, .85f) }
@@ -140,6 +146,21 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
             "alignr" -> { line(.2f, .3f, .8f, .3f); line(.45f, .5f, .8f, .5f); line(.2f, .7f, .8f, .7f) }
             "indent" -> { line(.4f, .3f, .84f, .3f); line(.4f, .5f, .84f, .5f); line(.4f, .7f, .84f, .7f); line(.16f, .38f, .28f, .5f); line(.28f, .5f, .16f, .62f) }
             "outdent" -> { line(.4f, .3f, .84f, .3f); line(.4f, .5f, .84f, .5f); line(.4f, .7f, .84f, .7f); line(.28f, .38f, .16f, .5f); line(.16f, .5f, .28f, .62f) }
+            "tag" -> {
+                val p = Path().apply { moveTo(.16f * w, .16f * w); lineTo(.54f * w, .16f * w); lineTo(.86f * w, .48f * w); lineTo(.48f * w, .86f * w); lineTo(.16f * w, .54f * w); close() }
+                drawPath(p, color, style = st); drawCircle(color, .05f * w, Offset(.32f * w, .32f * w))
+            }
+            "palette" -> {
+                svg("M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.6 0-.6-.3-1-.6-1.4-.4-.5-.2-1.5.9-1.5H16a4.5 4.5 0 0 0 4.5-4.5C20.5 6.7 16.8 3.5 12 3.5z")
+                dot(8f / 24f, 11f / 24f, 1.1f / 24f); dot(12f / 24f, 8f / 24f, 1.1f / 24f); dot(16f / 24f, 11f / 24f, 1.1f / 24f)
+            }
+            "accent" -> { drawCircle(color, w / 3f, Offset(w / 2f, w / 2f), style = st); dot(.5f, .5f, .125f) }
+            "page" -> { svg("M7 4.5h10A2.5 2.5 0 0 1 19.5 7v10a2.5 2.5 0 0 1-2.5 2.5H7A2.5 2.5 0 0 1 4.5 17V7A2.5 2.5 0 0 1 7 4.5z"); svg("M4.5 14l4-3.5 4 3 3-2.5 4 3") }
+            "eye" -> { svg("M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"); drawCircle(color, 3f / 24f * w, Offset(.5f * w, .5f * w), style = st) }
+            "corner" -> svg("M5 19V11a6 6 0 0 1 6-6h8")
+            "backup" -> { svg("M7 18.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.5a4.5 4.5 0 0 1 .5 9H7z"); svg("M12 16v-5M9.5 13l2.5-2.5 2.5 2.5") }
+            "restore" -> { svg("M7 18.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.5a4.5 4.5 0 0 1 .5 9H7z"); svg("M12 11v5M9.5 14l2.5 2.5 2.5-2.5") }
+            "headsize" -> svg("M6 7V5h12v2M12 5v14M9 19h6")
             "quote" -> { line(.2f, .22f, .2f, .78f); line(.38f, .32f, .84f, .32f); line(.38f, .5f, .84f, .5f); line(.38f, .68f, .66f, .68f) }
             "divider" -> { line(.12f, .5f, .88f, .5f); line(.3f, .28f, .7f, .28f); line(.3f, .72f, .7f, .72f) }
             "external" -> { line(.33f, .67f, .67f, .33f); line(.375f, .33f, .67f, .33f); line(.67f, .33f, .67f, .625f) }
