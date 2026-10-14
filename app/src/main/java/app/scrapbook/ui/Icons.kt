@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy, close, alignl, alignc, alignr, indent, outdent, tag, palette, accent, page, eye, corner, backup, restore, headsize */
+/** Small line icons drawn in code, so the app needs no icon library. kind: menu, search, more, list, numbered, link, grid, folder, chevron, newfile, sort, down, up, star, edit, clock, sparkle, sliders, info, starline, trash, layout, quote, divider, external, copy, close, alignl, alignc, alignr, indent, outdent, tag, palette, accent, page, eye, corner, backup, restore, headsize, home, arrow */
 @Composable
 fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
     Canvas(Modifier.size(dp)) {
@@ -161,6 +161,8 @@ fun Ic(kind: String, dp: Dp = 24.dp, color: Color = Sb.ink) {
             "backup" -> { svg("M7 18.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.5a4.5 4.5 0 0 1 .5 9H7z"); svg("M12 16v-5M9.5 13l2.5-2.5 2.5 2.5") }
             "restore" -> { svg("M7 18.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.5a4.5 4.5 0 0 1 .5 9H7z"); svg("M12 11v5M9.5 14l2.5 2.5 2.5-2.5") }
             "headsize" -> svg("M6 7V5h12v2M12 5v14M9 19h6")
+            "home" -> svg("M4 11l8-6.5 8 6.5M6 9.8V19h12V9.8")
+            "arrow" -> { line(.2f, .5f, .8f, .5f); line(.55f, .25f, .8f, .5f); line(.8f, .5f, .55f, .75f) }
             "quote" -> { line(.2f, .22f, .2f, .78f); line(.38f, .32f, .84f, .32f); line(.38f, .5f, .84f, .5f); line(.38f, .68f, .66f, .68f) }
             "divider" -> { line(.12f, .5f, .88f, .5f); line(.3f, .28f, .7f, .28f); line(.3f, .72f, .7f, .72f) }
             "external" -> { line(.33f, .67f, .67f, .33f); line(.375f, .33f, .67f, .33f); line(.67f, .33f, .67f, .625f) }

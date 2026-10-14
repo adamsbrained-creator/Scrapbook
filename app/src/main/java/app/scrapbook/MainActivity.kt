@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 val bars = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT) else SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
                 enableEdgeToEdge(statusBarStyle = bars, navigationBarStyle = bars)
             }
-            // Like Samsung Notes reopening its last folder: a fresh launch opens the box you were in. Until that is decided (a few
+            // Optional (Settings, off by default): a fresh launch can reopen the box you were in, on top of the Home page. Until that is decided (a few
             // milliseconds to read the saved settings) a blank page is shown instead of flashing the main page first.
             var ready by remember { mutableStateOf(!freshLaunch) }
             var reopen by remember { mutableStateOf(emptyList<String>()) }
@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                 // From here on, remember the box on screen. The main page, All scraps, Pinned and Recent are not boxes: they clear it.
                 nav.currentBackStackEntryFlow.collect { e ->
                     when (e.destination.route) {
-                        "home" -> vm.setLastBox("")
+                        "home", "scraps" -> vm.setLastBox("")
                         "shelf/{name}" -> vm.setLastBox(e.arguments?.getString("name")?.takeUnless { it == "All" || it == "Pinned" || it == "Recent" } ?: "")
                     }
                 }
@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
                     if (ready) CompositionLocalProvider(LocalShowPreview provides showPreview, LocalBoxStyle provides boxStyle) {
                         NavHost(nav, "home") {
                             composable("home") { HomeScreen(vm, nav) }
+                            composable("scraps") { AllScrapsScreen(vm, nav) }
                             composable("settings") { SettingsScreen(vm, nav) }
                             composable("about") { AboutScreen(nav) }
                             composable("whatsnew") { WhatsNewScreen(nav) }

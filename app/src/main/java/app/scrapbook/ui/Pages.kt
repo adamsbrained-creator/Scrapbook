@@ -332,7 +332,7 @@ fun ItemScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
             MenuRow("layout", "Change layout") { menu = false; nav.navigate("layouts/${item.id}") }
             MenuRow("sliders", "Page style") { menu = false; sheet = true }
             MenuDivider()
-            MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(item); nav.popBackStack("home", false) }
+            MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(item); nav.backToLists() }
         }
         if (item != null) {
             if (sheet) CustomizeSheet(item, vm) { sheet = false }

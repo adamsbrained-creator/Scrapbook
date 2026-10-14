@@ -54,7 +54,7 @@ val TAB_COLORS = listOf(Color(0xFF3DD9D6), Color(0xFFFF5A44), Color(0xFFFFC107),
 val TAB_NAMES = listOf("Teal", "Red", "Amber", "Green", "Violet", "Blue", "Pink", "Orange")
 val TAB_GRAY = Color(0xFFB4B4B4)
 
-private fun fmtDate(ms: Long, long: Boolean): String {
+internal fun fmtDate(ms: Long, long: Boolean): String {
     val d = Date(ms); val day = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
     val time = SimpleDateFormat("h:mm a", Locale.getDefault()).format(d)
     return if (day.format(d) == day.format(Date())) (if (long) "Today · $time" else time) else SimpleDateFormat("MMM d", Locale.getDefault()).format(d)
@@ -307,6 +307,39 @@ private fun MoreMenu(open: Boolean, onDismiss: () -> Unit, onRediscover: () -> U
     }
 }
 
+/** The header the Home page and the All scraps page share: menu, wordmark and search, laid out the way the Main page header setting says. */
+@Composable
+internal fun MainHeader(header: Int, hs: Float, nav: NavController, onMenu: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    val moreMenu: @Composable () -> Unit = {
+        MoreMenu(menu, { menu = false }, { menu = false; nav.navigate("rediscover") }, { menu = false; nav.navigate("collections") }, { menu = false; nav.navigate("settings") })
+    }
+    when (header) {
+        0 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            TopBtn("menu", "Menu", onMenu)
+            Wordmark(Modifier.weight(1f).padding(start = 8.dp), size = 30.sp * hs)
+            TopBtn("search", "Search") { nav.navigate("search") }
+            Box { TopBtn("more", "More") { menu = true }; moreMenu() }
+        }
+        1 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f)) { TopBtn("menu", "Menu", onMenu) }
+            Wordmark(Modifier, size = 30.sp * hs)
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
+                TopBtn("search", "Search") { nav.navigate("search") }
+                Box { TopBtn("more", "More") { menu = true }; moreMenu() }
+            }
+        }
+        else -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            RoundTop("menu", "Menu", onMenu)
+            Wordmark(Modifier.weight(1f), center = true, size = 34.sp * hs)
+            RoundTop("search", "Search") { nav.navigate("search") }
+        }
+    }
+}
+
+/** After a scrap is deleted: back to the All scraps page if it is open underneath, otherwise to the Home page. */
+fun NavController.backToLists() { if (!popBackStack("scraps", false)) popBackStack("home", false) }
+
 /** A group of menu rows on one rounded card, the same grouping the Settings page uses. */
 @Composable
 private fun MenuGroup(content: @Composable ColumnScope.() -> Unit) {
@@ -315,7 +348,7 @@ private fun MenuGroup(content: @Composable ColumnScope.() -> Unit) {
 
 /** A row in a menu group: icon, label, chevron. The last row of a group has no divider under it. */
 @Composable
-private fun MenuRow(icon: String, label: String, last: Boolean = false, onClick: () -> Unit) {
+private fun SheetRow(icon: String, label: String, last: Boolean = false, onClick: () -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth().height(54.dp).tap(label, onClick).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             Ic(icon, 24.dp, Sb.ink); Spacer(Modifier.width(14.dp))
@@ -335,17 +368,18 @@ fun MenuSheet(nav: NavController, onClose: () -> Unit, onNew: () -> Unit) {
     fun go(route: String) { onClose(); nav.navigate(route) }
     Sheet("scrapbook", onClose, doneLabel = "New scrap", primary = { onClose(); onNew(); nav.navigate("edit/0") }) {
         MenuGroup {
-            MenuRow("list", "All scraps") { go("shelf/All") }
-            MenuRow("star", "Pinned") { go("shelf/Pinned") }
-            MenuRow("clock", "Recently edited", last = true) { go("shelf/Recent") }
+            SheetRow("home", "Home") { onClose(); nav.popBackStack("home", false) }
+            SheetRow("list", "All scraps") { go("scraps") }
+            SheetRow("star", "Pinned") { go("shelf/Pinned") }
+            SheetRow("clock", "Recently edited", last = true) { go("shelf/Recent") }
         }
         MenuGroup {
-            MenuRow("sparkle", "Rediscover") { go("rediscover") }
-            MenuRow("search", "Search", last = true) { go("search") }
+            SheetRow("sparkle", "Rediscover") { go("rediscover") }
+            SheetRow("search", "Search", last = true) { go("search") }
         }
         MenuGroup {
-            MenuRow("sliders", "Settings") { go("settings") }
-            MenuRow("info", "About", last = true) { go("about") }
+            SheetRow("sliders", "Settings") { go("settings") }
+            SheetRow("info", "About", last = true) { go("about") }
         }
     }
 }
@@ -397,14 +431,14 @@ fun BottomNav(modifier: Modifier, onMenu: () -> Unit, onAdd: () -> Unit) {
     }
 }
 
-/** Main page: collection tiles on top, then all notes as a list or grid. */
+/** The All scraps page: collection tiles on top, then every scrap as a list or grid. Opened from the Home page and the menu. */
 @Composable
-fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
+fun AllScrapsScreen(vm: ArchiveViewModel, nav: NavController) {
     val t = LocalSb.current; val all by vm.items.collectAsState(); val shelves by vm.shelves.collectAsState()
-    val inboxColor by vm.inboxColor.collectAsState(); val welcomed by vm.welcomed.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
+    val inboxColor by vm.inboxColor.collectAsState(); val deleted by vm.deleted.collectAsState(); val header by vm.headerStyle.collectAsState()
     val snack = remember { SnackbarHostState() }
     val inboxHidden by vm.inboxHidden.collectAsState(); var deleting by remember { mutableStateOf<String?>(null) }; var deletingScrap by remember { mutableStateOf<Item?>(null) }
-    var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState(); var menu by remember { mutableStateOf(false) }
+    var menuSheet by remember { mutableStateOf(false) }; val navStyle by vm.navStyle.collectAsState()
     // List or grid starts as the Default view setting. Tapping the switch here only changes it until you leave the app.
     val defaultGrid by vm.defaultGrid.collectAsState(); var gridTouched by rememberSaveable { mutableStateOf(false) }; var gridPick by rememberSaveable { mutableStateOf(false) }
     val grid = if (gridTouched) gridPick else defaultGrid
@@ -425,39 +459,9 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
         Scaffold(containerColor = t.paper, snackbarHost = { SnackbarHost(snack) { d -> SwipeAway({ d.dismiss() }) { Snackbar(d, shape = RoundedCornerShape(20.dp), containerColor = Sb.ink, contentColor = Sb.card, actionColor = t.acc) } } }) { pad ->
             Box(Modifier.fillMaxSize().padding(pad)) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    item {
-                        val moreMenu: @Composable () -> Unit = {
-                            MoreMenu(menu, { menu = false }, { menu = false; nav.navigate("rediscover") }, { menu = false; nav.navigate("collections") }, { menu = false; nav.navigate("settings") })
-                        }
-                        when (header) {
-                            0 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                TopBtn("menu", "Menu") { menuSheet = true }
-                                Wordmark(Modifier.weight(1f).padding(start = 8.dp), size = 30.sp * hs)
-                                TopBtn("search", "Search") { nav.navigate("search") }
-                                Box { TopBtn("more", "More") { menu = true }; moreMenu() }
-                            }
-                            1 -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Row(Modifier.weight(1f)) { TopBtn("menu", "Menu") { menuSheet = true } }
-                                Wordmark(Modifier, size = 30.sp * hs)
-                                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
-                                    TopBtn("search", "Search") { nav.navigate("search") }
-                                    Box { TopBtn("more", "More") { menu = true }; moreMenu() }
-                                }
-                            }
-                            else -> Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                RoundTop("menu", "Menu") { menuSheet = true }
-                                Wordmark(Modifier.weight(1f), center = true, size = 34.sp * hs)
-                                RoundTop("search", "Search") { nav.navigate("search") }
-                            }
-                        }
-                    }
-                    item {
-                        Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.tap("Boxes") { nav.navigate("collections") }) { Ic("folder", 28.dp, Sb.mute) }
-                            Ic("chevron", 24.dp, Sb.mute)
-                            Text("All scraps", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                        }
-                    }
+                    item { MainHeader(header, hs, nav) { menuSheet = true } }
+                    // The page's title sits small under the menu button, the way the other pages (Settings and the rest) show theirs.
+                    item { Text("All scraps", Modifier.padding(start = 12.dp).offset(y = (-4).dp), fontSize = 16.sp, fontWeight = FontWeight.Medium) }
                     if (showBoxes) item {
                         val inboxTile = if (inboxHidden) emptyList<BoxTile>() else listOf(BoxTile("Inbox", inbox, if (inboxColor < 0) TAB_GRAY else TAB_COLORS[inboxColor % TAB_COLORS.size]))
                         val tiles = shelves.topLevel().map { BoxTile(it.name, all.count { n -> n.collection == it.name }, TAB_COLORS[it.color % TAB_COLORS.size]) } + inboxTile
@@ -496,6 +500,5 @@ fun HomeScreen(vm: ArchiveViewModel, nav: NavController) {
         if (menuSheet) MenuSheet(nav, { menuSheet = false }) { vm.pendingShelf = null }
         deleting?.let { n -> DeleteBoxSheet(n, vm, { deleting = null }) }
         deletingScrap?.let { n -> DeleteScrapSheet(n, vm) { deletingScrap = null } }
-        if (!welcomed) Welcome({ vm.dismissWelcome() }, { vm.addExamples() })
     }
 }

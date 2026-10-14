@@ -856,7 +856,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     val existing = remember(id) { vm.items.value.firstOrNull { it.id == id } }
     var curId by remember(id) { mutableLongStateOf(id) }
     var title by remember(id) { mutableStateOf(existing?.let { x -> if (bodyWithoutTitle(x.title, x.body) != x.body) "" else x.title } ?: "") }
-    var body by remember(id) { mutableStateOf(TextFieldValue(existing?.body ?: "")) }
+    var body by remember(id) { mutableStateOf(existing?.body?.let { TextFieldValue(it) } ?: vm.takePendingBody()?.let { TextFieldValue(it, TextRange(it.length)) } ?: TextFieldValue("")) }
     var color by remember(id) { mutableIntStateOf(existing?.color ?: 0) }
     var kind by remember(id) { mutableStateOf(existing?.kind ?: Kind.Note) }
     var shelf by remember(id) { mutableStateOf(existing?.collection ?: vm.takePendingShelf() ?: "Inbox") }
@@ -879,6 +879,8 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
     var linkSheet by remember { mutableStateOf<TextRange?>(null) }; var linkUrl by remember { mutableStateOf("") }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris -> uris.forEach { u -> vm.importImage(u) { imgs = imgs + it } } }
     fun addImage() = pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    // The Home page's image button opens a new scrap and goes straight to the photo picker.
+    LaunchedEffect(id) { if (existing == null && vm.takePendingImage()) addImage() }
     fun doUndo() { if (undo.isNotEmpty()) { redo.addLast(body); body = undo.removeLast() } }
     fun doRedo() { if (redo.isNotEmpty()) { undo.addLast(body); body = redo.removeLast() } }
     /** Opens the link sheet for the current selection. The selection is remembered because the sheet takes focus from the text. */
@@ -1102,7 +1104,7 @@ fun EditorScreen(vm: ArchiveViewModel, nav: NavController, id: Long) {
                 MenuRow(if (live.pinned) "star" else "starline", if (live.pinned) "Unpin" else "Pin", iconColor = if (live.pinned) t.acc else Sb.ink) { menu = false; vm.togglePin(live) }
                 MenuRow("layout", "Change layout") { menu = false; scope.launch { flush(); nav.navigate("layouts/${live.id}") } }
                 MenuDivider()
-                MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(live); nav.popBackStack("home", false) }
+                MenuRow("trash", "Delete", tint = Sb.danger) { menu = false; vm.delete(live); nav.backToLists() }
             }
             MenuDivider()
             val words = body.text.split(Regex("\\s+")).count { it.isNotBlank() }

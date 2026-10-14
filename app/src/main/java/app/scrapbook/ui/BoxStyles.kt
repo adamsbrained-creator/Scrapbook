@@ -41,7 +41,7 @@ private val OnColorSoft = Color(0xFF5F5F5F)
 private fun Modifier.boxLabel(name: String, count: Int): Modifier = semantics(mergeDescendants = true) { contentDescription = "$name, ${scrapsOf(count)}" }
 
 /** A dashed outline for the "New box" buttons. */
-private fun Modifier.dashedOutline(color: Color, shape: RoundedCornerShape): Modifier = drawBehind {
+internal fun Modifier.dashedOutline(color: Color, shape: RoundedCornerShape): Modifier = drawBehind {
     val o = shape.createOutline(size, layoutDirection, this) as? Outline.Rounded ?: return@drawBehind
     drawPath(Path().apply { addRoundRect(o.roundRect) }, color,
         style = Stroke(1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 6.dp.toPx()))))

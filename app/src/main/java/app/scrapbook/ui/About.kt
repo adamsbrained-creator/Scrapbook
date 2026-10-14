@@ -169,6 +169,8 @@ private class Release(val title: String, val notes: List<String>)
 /** Newest first. Add a Release at the top when you ship something new. */
 private val RELEASES = listOf(
     Release("Latest", listOf(
+        "A new Home page is where the app starts: a quick way to write something down, the scrap you edited last, your boxes, pinned scraps and the latest ones. The full list is now the All scraps page, with its title under the menu button.",
+        "Opening the last box on launch is now off by default, since Home has a Continue card. You can turn it back on in Settings.",
         "A redesigned Settings page: a summary card showing how much of your archive is filed in boxes, icon rows with the current choice, and pickers instead of inline switches.",
         "New editor tools: Text options (lists, alignment, bold, italic, underline, strikethrough, indent), font color with any color you like, and a font size picker.",
         "The editor now hides the markdown marks as you write. Double tap selects a word, triple tap a line, four taps everything. Tap a checkbox to tick it.",

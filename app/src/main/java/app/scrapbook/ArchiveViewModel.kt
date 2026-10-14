@@ -49,6 +49,11 @@ data class Incoming(val text: String, val subject: String, val images: List<Uri>
 class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     /** Set by a collection screen so the next new note starts in that collection. */
     var pendingShelf: String? = null
+    /** Set by the Home page's quick buttons: the editor opens a new scrap with this text already in it, or goes straight to the photo picker. */
+    var pendingBody: String? = null
+    var pendingImage = false
+    fun takePendingBody(): String? { val s = pendingBody; pendingBody = null; return s }
+    fun takePendingImage(): Boolean { val b = pendingImage; pendingImage = false; return b }
     fun takePendingShelf(): String? { val s = pendingShelf; pendingShelf = null; return s }
     val incoming = MutableStateFlow<Incoming?>(null)
     fun clearIncoming() { incoming.value = null }
@@ -108,9 +113,9 @@ class ArchiveViewModel(app: Application) : AndroidViewModel(app) {
     val showBoxSearch: StateFlow<Boolean> = ds.data.map { it[BOX_SEARCH] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     fun setShowBoxSearch(b: Boolean) = edit { it[BOX_SEARCH] = b }
     /** Whether the app opens in the box you were last in, instead of the main page. On by default. */
-    val reopenLastBox: StateFlow<Boolean> = ds.data.map { it[REOPEN_LAST_BOX] ?: true }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val reopenLastBox: StateFlow<Boolean> = ds.data.map { it[REOPEN_LAST_BOX] ?: false }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     fun setReopenLastBox(b: Boolean) = edit { it[REOPEN_LAST_BOX] = b }
-    suspend fun readReopenLastBox(): Boolean = ds.data.first()[REOPEN_LAST_BOX] ?: true
+    suspend fun readReopenLastBox(): Boolean = ds.data.first()[REOPEN_LAST_BOX] ?: false
     /** The box that was open when the app was last used. "" means the main page (or All scraps, Pinned and Recent, which are not boxes). */
     suspend fun readLastBox(): String = ds.data.first()[LAST_BOX] ?: ""
     fun setLastBox(name: String) = edit { it[LAST_BOX] = name }
