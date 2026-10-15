@@ -1,0 +1,97 @@
+name: Android CI
+
+# Builds the app every time you push to main, or when you press "Run workflow" on the Actions tab.
+# The finished APK is attached to the run as "scrapbook-release-apk".
+on:
+  push:
+    branches: [main]
+    # uploading a zip is for "Scrapbook (from zip)"; it should not also start this build
+    paths-ignore: ["*.zip"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      # Minutes since 1970: rises with every build, so each APK counts as newer than the last (Android refuses
+      # older ones). Same formula as "Scrapbook (from zip)", so APKs from either workflow can update each other.
+      - name: Version code
+        run: echo "VERSION_CODE=$(( $(date +%s) / 60 ))" >> "$GITHUB_ENV"
+
+      # Every build must be signed with the SAME key, or Android refuses to update the installed app.
+      - name: Prepare the signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error title=No signing key::Add the four secrets KEYSTORE_B64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD (see SIGNING.md). Without them every build gets a different key and Android will not update the app."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/release.jks"
+          if ! keytool -list -v -keystore "$RUNNER_TEMP/release.jks" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > "$RUNNER_TEMP/keyinfo.txt" 2>&1; then
+            echo "::error title=Signing key problem::The key could not be opened. Check that KEYSTORE_B64 was pasted completely, and that KEYSTORE_PASSWORD and KEY_ALIAS are right."
+            exit 1
+          fi
+          {
+            echo "### Signing key"
+            echo "Must be identical on every run:"
+            echo
+            grep -m1 "SHA256:" "$RUNNER_TEMP/keyinfo.txt" | sed 's/^ *//'
+            echo
+            echo "Version 0.1.$GITHUB_RUN_NUMBER (versionCode $VERSION_CODE)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # A failing test shows a warning here but does not stop you getting the APK.
+      - name: Run tests
+        continue-on-error: true
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Build the APKs
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle --no-daemon assembleRelease assembleDebug
+
+      - name: Show the APK's signature
+        continue-on-error: true
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          {
+            echo "APK signature:"
+            echo
+            "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep "SHA-256"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrapbook-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrapbook-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
