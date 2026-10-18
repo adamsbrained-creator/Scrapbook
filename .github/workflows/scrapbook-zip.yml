@@ -9,7 +9,10 @@
 #
 # Same build as "Android CI": signed with YOUR key (the four secrets from SIGNING.md), so a new APK installs
 # over the old one and keeps your notes. First time only: run "Create signing key (run once)" and add the secrets.
-# Result: Actions > the run > Artifacts > scrapbook-release-apk (a zip with app-release.apk in it).
+# Result: Actions > the run > Artifacts > scrapbook-release-apk (a zip with app-release.apk in it). THAT is the one to install.
+# The release APK is optimized (R8). If that optimized build ever fails, the workflow builds it once more without
+# optimization, so you still get an APK, and says so in the run's Summary page.
+# The debug APK (slow: it is only for finding bugs) is NOT built unless you press "Run workflow" and set "Also build debug" to yes.
 # If the build fails, the Kotlin compile errors are copied into the run's Summary page.
 name: Scrapbook (from zip)
 
@@ -23,6 +26,16 @@ on:
         description: "Name of the zip to build (empty = the one uploaded most recently)"
         required: false
         default: ""
+      minify:
+        description: "Optimize the release build (R8). Leave on yes; choose no only if the optimized app misbehaves"
+        type: choice
+        options: ["yes", "no"]
+        default: "yes"
+      debug:
+        description: "Also build the slow debug APK (scrapbook-debug-apk)"
+        type: choice
+        options: ["no", "yes"]
+        default: "no"
 
 permissions:
   contents: read
@@ -144,7 +157,10 @@ jobs:
         working-directory: ${{ env.PROJ }}
         run: gradle --no-daemon testDebugUnitTest
 
-      - name: Build the APKs
+      # The release APK: optimized by R8 and signed with your key.
+      - name: Build the release APK
+        id: optimized
+        continue-on-error: true
         shell: bash
         working-directory: ${{ env.PROJ }}
         env:
@@ -152,16 +168,62 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle --no-daemon --console=plain assembleRelease assembleDebug 2>&1 | tee build.log
+          MINIFY: ${{ inputs.minify || 'yes' }}
+        run: |
+          if [ "$MINIFY" = "no" ]; then flag=false; else flag=true; fi
+          gradle --no-daemon --console=plain assembleRelease -Pscrapbook.minify=$flag 2>&1 | tee build.log
 
-      - name: Show the APK's signature
+      # Only runs when the optimized build failed: the same build once more, without the optimization (and without the baseline profile).
+      - name: Optimized build failed, building without optimization
+        if: steps.optimized.outcome == 'failure' && inputs.minify != 'no'
+        shell: bash
+        working-directory: ${{ env.PROJ }}
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cp build.log build-optimized.log
+          rm -f app/src/main/baseline-prof.txt
+          gradle --no-daemon --console=plain assembleRelease -Pscrapbook.minify=false 2>&1 | tee build.log
+          {
+            echo "### WARNING: the optimized build failed, so this APK is NOT optimized"
+            echo "It works, but it will not be as fast. Send Claude these first errors:"
+            echo '```'
+            grep -E 'R8|ERROR|error:|What went wrong' -A3 build-optimized.log | head -40 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build the debug APK (only when asked for)
+        if: inputs.debug == 'yes'
+        shell: bash
+        working-directory: ${{ env.PROJ }}
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle --no-daemon --console=plain assembleDebug 2>&1 | tee build-debug.log
+
+      - name: Show the APK's signature and type
         continue-on-error: true
         run: |
+          APK="$PROJ/app/build/outputs/apk/release/app-release.apk"
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          badging=$("$AAPT2" dump badging "$APK" 2>/dev/null || true)
+          case "$badging" in
+            *application-debuggable*) kind="DEBUGGABLE (unexpected)" ;;
+            *) kind="release build, not debuggable" ;;
+          esac
           {
+            echo "### Install this one"
+            echo "Artifact **scrapbook-release-apk**, file app-release.apk ($kind, $(du -h "$APK" | cut -f1))"
+            echo
             echo "APK signature:"
             echo
-            "$APKSIGNER" verify --print-certs "$PROJ/app/build/outputs/apk/release/app-release.apk" | grep "SHA-256"
+            "$APKSIGNER" verify --print-certs "$APK" | grep "SHA-256"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
@@ -171,6 +233,7 @@ jobs:
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
+        if: inputs.debug == 'yes'
         with:
           name: scrapbook-debug-apk
           path: ${{ env.PROJ }}/app/build/outputs/apk/debug/app-debug.apk
